@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scoreboard Display</title>
+    <style>
+        :root {
+            --sponsor-band-height: 45vh;
+            --sponsor-band-height: 45dvh;
+        }
+        html,
+        body {
+            min-height: 100%;
+        }
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+            background: #000 url('./background.png') center center / cover no-repeat;
+            color: white; /* Set text color to white */
+        }
+        .container {
+            min-height: calc(100vh - var(--sponsor-band-height));
+            min-height: calc(100dvh - var(--sponsor-band-height));
+            padding: 4px 12px 0;
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+        }
+        .scoreboard-top {
+            flex: 1 1 auto;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+            padding: 8px 0 12px;
+            gap: 8px;
+            box-sizing: border-box;
+        }
+        .team-info {
+            margin: 0;
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            gap: 20px;
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+        .team-info h1 {
+            font-size: var(--team-name-size, clamp(9.15rem, 24.45vw, 15.75rem));
+            margin: 0;
+            line-height: 0.95;
+        }
+        .team-info h2 {
+            font-size: var(--versus-size, clamp(2.2rem, 6vw, 3.8rem));
+            margin: 0;
+            line-height: 1;
+        }
+        .score {
+            font-size: var(--score-size, clamp(23.25rem, 66.3vw, 39.75rem));
+            margin: 14px 0 0;
+            line-height: 0.84;
+            font-weight: 700;
+        }
+        .clock {
+            font-size: var(--clock-size, clamp(10.2rem, 28.05vw, 17.85rem));
+            line-height: 1;
+            margin: 0 0 4px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            flex: 0 0 auto;
+        }
+        .team-column {
+            text-align: center;
+            min-width: 0;
+            flex: 1 1 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 0;
+        }
+        .versus-column {
+            text-align: center;
+            align-self: stretch;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-top: 0;
+            flex: 0 0 auto;
+        }
+        .sponsors {
+            display: flex;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .sponsors img {
+            max-width: 120px;
+            height: auto;
+            margin: 10px;
+            object-fit: contain;
+        }
+        .goal-emoji {
+            position: absolute;
+            transform: translateX(-50%);
+            left: 50%;
+            top: -10px;
+            animation: flyup 1400ms cubic-bezier(.2,.8,.2,1) forwards;
+            font-size: 56px;
+            pointer-events: none;
+            will-change: transform, opacity;
+            text-shadow: 0 2px 6px rgba(0,0,0,0.6);
+        }
+        @keyframes flyup {
+            0% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -200px) scale(1.6); }
+        }
+        #sponsorTickerWrapper {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: var(--sponsor-band-height);
+            min-height: var(--sponsor-band-height);
+            max-height: var(--sponsor-band-height);
+            overflow: hidden;
+            pointer-events: none;
+            box-sizing: border-box;
+        }
+        #sponsorTicker {
+            position: absolute;
+            inset: 0;
+            white-space: nowrap;
+            will-change: transform;
+            display: flex;
+            align-items: center;
+            height: 100%;
+        }
+        #sponsorTicker img {
+            height: calc(100% - 24px);
+            max-height: calc(100% - 24px);
+            width: auto;
+            margin: 0 24px;
+            display: inline-block;
+            object-fit: contain;
+            pointer-events: none;
+        }
+        #goalCelebration {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            box-sizing: border-box;
+            background: radial-gradient(circle at center, rgba(255,255,255,0.16), rgba(0,0,0,0.88));
+            opacity: 0;
+            pointer-events: none;
+            z-index: 50;
+            transition: opacity 220ms ease;
+        }
+        #goalCelebration.is-visible {
+            opacity: 1;
+        }
+        #goalCelebration.is-visible .goal-celebration-card {
+            animation: celebrationPulse 900ms ease-in-out infinite;
+        }
+        #goalCelebration.is-visible .goal-celebration-logo,
+        #goalCelebration.is-visible .goal-celebration-text,
+        #goalCelebration.is-visible .goal-celebration-team {
+            animation: celebrationFlash 700ms ease-in-out infinite;
+        }
+        .goal-celebration-card {
+            width: min(92vw, 1100px);
+            min-height: min(78vh, 760px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 24px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
+            border: 6px solid rgba(255,255,255,0.28);
+            border-radius: 28px;
+            box-shadow: 0 18px 60px rgba(0,0,0,0.45);
+            backdrop-filter: blur(4px);
+            text-align: center;
+        }
+        .goal-celebration-logo {
+            width: min(42vw, 320px);
+            max-width: 320px;
+            max-height: 320px;
+            object-fit: contain;
+            filter: drop-shadow(0 10px 24px rgba(0,0,0,0.35));
+        }
+        .goal-celebration-text {
+            font-size: clamp(3.4rem, 14vw, 8rem);
+            line-height: 0.9;
+            font-weight: 900;
+            letter-spacing: 0.08em;
+            color: #fff;
+            text-shadow: 0 8px 20px rgba(0,0,0,0.4);
+        }
+        .goal-celebration-team {
+            font-size: clamp(1.8rem, 5.5vw, 3.2rem);
+            line-height: 1;
+            font-weight: 700;
+            color: rgba(255,255,255,0.95);
+        }
+        @keyframes celebrationPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.035); }
+            100% { transform: scale(1); }
+        }
+        @keyframes celebrationFlash {
+            0% { opacity: 0.75; filter: brightness(0.95) drop-shadow(0 0 0 rgba(255,255,255,0)); }
+            50% { opacity: 1; filter: brightness(1.45) drop-shadow(0 0 22px rgba(255,255,255,0.95)); }
+            100% { opacity: 0.82; filter: brightness(1.02) drop-shadow(0 0 0 rgba(255,255,255,0)); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="scoreboard-top">
+            <div class="clock" id="clock">00:00</div>
+
+            <div class="team-info">
+                <div class="team-column">
+                    <h1 id="team1Name">Team 1</h1>
+                    <div class="score" id="team1Score">0</div>
+                </div>
+                <div class="versus-column">
+                    <h2>:</h2>
+                </div>
+                <div class="team-column">
+                    <h1 id="team2Name">Team 2</h1>
+                    <div class="score" id="team2Score">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <div id="sponsorTickerWrapper">
+                <div id="sponsorTicker"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="goalCelebration">
+        <div class="goal-celebration-card">
+            <img class="goal-celebration-logo" id="goalCelebrationLogo" src="team1_logo.png" alt="Team Logo">
+            <div class="goal-celebration-text">TOOOOR!</div>
+            <div class="goal-celebration-team" id="goalCelebrationTeam">SG Kylltal</div>
+        </div>
+    </div>
+
+    <script>
+    const HOME_TEAM_LOGO_SRC = 'team1_logo.png';
+    const AWAY_TEAM_LOGO_SRC = 'team2_logo.png';
+    const VULKANIA_LOGO_SRC = 'vulkania.jpg';
+    const GOAL_CELEBRATION_KEYWORDS = /kylltal|vulkania|vlukania/i;
+    let goalCelebrationTimer = null;
+    let scoreboardBaseFontSizes = null;
+
+    function captureScoreboardBaseFontSizes() {
+        if (scoreboardBaseFontSizes) {
+            return scoreboardBaseFontSizes;
+        }
+
+        const teamNames = Array.from(document.querySelectorAll('.team-info h1'));
+        const scores = Array.from(document.querySelectorAll('.score'));
+        const clock = document.querySelector('.clock');
+        const versus = document.querySelector('.team-info h2');
+
+        if (!teamNames.length || !scores.length || !clock || !versus) {
+            return null;
+        }
+
+        scoreboardBaseFontSizes = {
+            teamName: Math.max(...teamNames.map(el => parseFloat(getComputedStyle(el).fontSize) || 0)),
+            score: Math.max(...scores.map(el => parseFloat(getComputedStyle(el).fontSize) || 0)),
+            clock: parseFloat(getComputedStyle(clock).fontSize) || 0,
+            versus: parseFloat(getComputedStyle(versus).fontSize) || 0
+        };
+
+        return scoreboardBaseFontSizes;
+    }
+
+    function applyScoreboardScale(scale) {
+        const base = captureScoreboardBaseFontSizes();
+        if (!base) {
+            return;
+        }
+
+        const root = document.documentElement;
+        root.style.setProperty('--team-name-size', `${base.teamName * scale}px`);
+        root.style.setProperty('--score-size', `${base.score * scale}px`);
+        root.style.setProperty('--clock-size', `${base.clock * scale}px`);
+        root.style.setProperty('--versus-size', `${base.versus * scale}px`);
+    }
+
+    function fitsAvailableScoreboardArea() {
+        const scoreboardTop = document.querySelector('.scoreboard-top');
+        const sponsorTicker = document.getElementById('sponsorTickerWrapper');
+        const clock = document.getElementById('clock');
+        const teamInfo = document.querySelector('.team-info');
+        if (!scoreboardTop || !sponsorTicker) {
+            return true;
+        }
+
+        if (!clock || !teamInfo) {
+            return true;
+        }
+
+        const scoreboardRect = scoreboardTop.getBoundingClientRect();
+        const tickerRect = sponsorTicker.getBoundingClientRect();
+        const clockRect = clock.getBoundingClientRect();
+        const teamInfoRect = teamInfo.getBoundingClientRect();
+        const contentBottom = Math.max(clockRect.bottom, teamInfoRect.bottom);
+        const verticalFits = contentBottom <= (tickerRect.top - 6);
+
+        const teamNamesFit = Array.from(document.querySelectorAll('.team-info h1')).every(element => {
+            return element.scrollWidth <= (element.clientWidth + 2);
+        });
+        const scoresFit = Array.from(document.querySelectorAll('.score')).every(element => {
+            return element.scrollWidth <= (element.clientWidth + 2);
+        });
+        const teamInfoFits = teamInfo.scrollWidth <= (teamInfo.clientWidth + 4);
+
+        return verticalFits && teamNamesFit && scoresFit && teamInfoFits && clockRect.top >= scoreboardRect.top;
+    }
+
+    function fitScoreboardLayout() {
+        const scoreboardTop = document.querySelector('.scoreboard-top');
+        if (!scoreboardTop) {
+            return;
+        }
+
+        const base = captureScoreboardBaseFontSizes();
+        if (!base) {
+            return;
+        }
+
+        let low = 0.12;
+        let high = 3.2;
+        let bestScale = low;
+
+        applyScoreboardScale(low);
+        if (!fitsAvailableScoreboardArea()) {
+            return;
+        }
+
+        for (let iteration = 0; iteration < 18; iteration += 1) {
+            const mid = (low + high) / 2;
+            applyScoreboardScale(mid);
+
+            if (fitsAvailableScoreboardArea()) {
+                bestScale = mid;
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+
+        applyScoreboardScale(bestScale);
+    }
+
+    function shuffleArray(items) {
+        const shuffled = [...items];
+        for (let index = shuffled.length - 1; index > 0; index--) {
+            const randomIndex = Math.floor(Math.random() * (index + 1));
+            [shuffled[index], shuffled[randomIndex]] = [shuffled[randomIndex], shuffled[index]];
+        }
+        return shuffled;
+    }
+
+    function pickNextSponsorEntry(entries, previousSponsor) {
+        const availableEntries = entries.filter(entry => entry.remaining > 0);
+        if (availableEntries.length === 0) {
+            return null;
+        }
+
+        const differentLogoAndPriority = availableEntries.filter(entry => {
+            if (!previousSponsor) {
+                return true;
+            }
+
+            return entry.url !== previousSponsor.url && entry.priority !== previousSponsor.priority;
+        });
+
+        const differentLogo = availableEntries.filter(entry => {
+            if (!previousSponsor) {
+                return true;
+            }
+
+            return entry.url !== previousSponsor.url;
+        });
+
+        const pool = differentLogoAndPriority.length > 0
+            ? differentLogoAndPriority
+            : (differentLogo.length > 0 ? differentLogo : availableEntries);
+
+        const totalRemaining = pool.reduce((sum, entry) => sum + entry.remaining, 0);
+        let threshold = Math.random() * totalRemaining;
+
+        for (const entry of pool) {
+            threshold -= entry.remaining;
+            if (threshold <= 0) {
+                return entry;
+            }
+        }
+
+        return pool[pool.length - 1];
+    }
+
+    function qualifiesForGoalCelebration(teamName) {
+        return GOAL_CELEBRATION_KEYWORDS.test(String(teamName || ''));
+    }
+
+    function getGoalCelebrationLogoSrc(teamName) {
+        const normalizedTeamName = String(teamName || '');
+
+        if (/vulkania|vlukania/i.test(normalizedTeamName)) {
+            return VULKANIA_LOGO_SRC;
+        }
+
+        if (/kylltal/i.test(normalizedTeamName)) {
+            return HOME_TEAM_LOGO_SRC;
+        }
+
+        return HOME_TEAM_LOGO_SRC;
+    }
+
+    function insertHomeLogoIntoCycle(cycle) {
+        if (!Array.isArray(cycle) || cycle.length === 0) {
+            return [];
+        }
+
+        const withHomeLogo = [];
+        cycle.forEach((entry, index) => {
+            withHomeLogo.push(entry);
+            if ((index + 1) % 4 === 0) {
+                withHomeLogo.push({
+                    url: HOME_TEAM_LOGO_SRC,
+                    priority: 0,
+                    isHomeLogo: true
+                });
+            }
+        });
+
+        return withHomeLogo;
+    }
+
+    function showGoalCelebration(teamName, logoSrc) {
+        const overlay = document.getElementById('goalCelebration');
+        const teamLabel = document.getElementById('goalCelebrationTeam');
+        const logo = document.getElementById('goalCelebrationLogo');
+        if (!overlay || !teamLabel || !logo) {
+            return;
+        }
+
+        teamLabel.textContent = teamName || 'TOOOOR!';
+        logo.src = logoSrc;
+        overlay.classList.add('is-visible');
+
+        if (goalCelebrationTimer) {
+            clearTimeout(goalCelebrationTimer);
+        }
+
+        goalCelebrationTimer = setTimeout(() => {
+            overlay.classList.remove('is-visible');
+        }, 3600);
+    }
+
+    function buildWeightedSponsorCycle(sponsors) {
+        const entries = shuffleArray(sponsors.map(sponsor => ({
+            ...sponsor,
+            priority: Number(sponsor.priority) || 4,
+            remaining: Math.max(1, Number(sponsor.weight) || 1)
+        })));
+
+        const cycle = [];
+        let previousSponsor = null;
+
+        while (entries.some(entry => entry.remaining > 0)) {
+            const nextEntry = pickNextSponsorEntry(entries, previousSponsor);
+            if (!nextEntry) {
+                break;
+            }
+
+            cycle.push(nextEntry);
+            nextEntry.remaining -= 1;
+            previousSponsor = nextEntry;
+        }
+
+        if (cycle.length > 1 && cycle[0].url === cycle[cycle.length - 1].url) {
+            const swapIndex = cycle.findIndex((sponsor, index) => index > 0 && sponsor.url !== cycle[0].url);
+            if (swapIndex > 0) {
+                const firstSponsor = cycle[0];
+                cycle[0] = cycle[swapIndex];
+                cycle[swapIndex] = firstSponsor;
+            }
+        }
+
+        return cycle;
+    }
+
+    function waitForTickerImages(images) {
+        return Promise.all(images.map(image => new Promise(resolve => {
+            if (image.complete) {
+                resolve();
+                return;
+            }
+
+            image.addEventListener('load', resolve, { once: true });
+            image.addEventListener('error', resolve, { once: true });
+        })));
+    }
+
+    function applyTeamDisplayData(data) {
+        const team1NameElement = document.getElementById('team1Name');
+        const team1ScoreElement = document.getElementById('team1Score');
+        const team2NameElement = document.getElementById('team2Name');
+        const team2ScoreElement = document.getElementById('team2Score');
+
+        if (!team1NameElement || !team1ScoreElement || !team2NameElement || !team2ScoreElement) {
+            console.error('Team elements not found in the DOM');
+            return;
+        }
+
+        const team1 = data.team1 || {
+            name: data.homeTeam,
+            score: data.homeScore
+        };
+        const team2 = data.team2 || {
+            name: data.awayTeam,
+            score: data.awayScore
+        };
+
+        team1NameElement.textContent = team1.name || 'Team 1';
+        if (prevHomeScore !== null && Number(team1.score) !== Number(prevHomeScore)) {
+            animateScoreElement(team1ScoreElement);
+            if (Number(team1.score) > Number(prevHomeScore) && qualifiesForGoalCelebration(team1.name)) {
+                showGoalCelebration(team1.name, getGoalCelebrationLogoSrc(team1.name));
+            }
+        }
+        team1ScoreElement.textContent = team1.score || 0;
+
+        team2NameElement.textContent = team2.name || 'Team 2';
+        if (prevAwayScore !== null && Number(team2.score) !== Number(prevAwayScore)) {
+            animateScoreElement(team2ScoreElement);
+            if (Number(team2.score) > Number(prevAwayScore) && qualifiesForGoalCelebration(team2.name)) {
+                showGoalCelebration(team2.name, getGoalCelebrationLogoSrc(team2.name));
+            }
+        }
+        team2ScoreElement.textContent = team2.score || 0;
+
+        prevHomeScore = Number(team1.score || 0);
+        prevAwayScore = Number(team2.score || 0);
+
+        requestAnimationFrame(fitScoreboardLayout);
+    }
+
+    // Sponsor ticker logic
+    async function initSponsorTicker() {
+        try {
+            const resp = await fetch('/api/sponsors');
+            const data = await resp.json();
+            if (!data.success) return;
+            const sponsors = data.sponsors || [];
+            const ticker = document.getElementById('sponsorTicker');
+            if (!ticker || sponsors.length === 0) return;
+
+            const cycle = insertHomeLogoIntoCycle(buildWeightedSponsorCycle(sponsors));
+            if (cycle.length === 0) return;
+
+            const images = cycle.map(sponsor => {
+                const img = document.createElement('img');
+                img.src = sponsor.url;
+                img.alt = 'Sponsor Logo';
+                ticker.appendChild(img);
+                return img;
+            });
+
+            await waitForTickerImages(images);
+
+            const minimumWidth = Math.max(window.innerWidth * 2, 1);
+            let cycleWidth = ticker.scrollWidth;
+            while (cycleWidth < minimumWidth) {
+                cycle.forEach(sponsor => {
+                    const img = document.createElement('img');
+                    img.src = sponsor.url;
+                    img.alt = 'Sponsor Logo';
+                    ticker.appendChild(img);
+                });
+                cycleWidth = ticker.scrollWidth;
+            }
+
+            ticker.innerHTML += ticker.innerHTML;
+
+            let pos = 0;
+            const speed = 40; // pixels per second
+            const wrapWidth = ticker.scrollWidth / 2;
+
+            function step(ts) {
+                pos -= (speed / 60); // approx per frame at 60fps
+                if (Math.abs(pos) > wrapWidth) {
+                    pos = 0;
+                }
+                ticker.style.transform = `translateX(${pos}px)`;
+                requestAnimationFrame(step);
+            }
+            requestAnimationFrame(step);
+
+        } catch (e) {
+            console.error('Failed to init sponsor ticker', e);
+        }
+    }
+    // Server-synced clock state (we store the server's elapsedSeconds snapshot and
+    // the local time when that snapshot was received so we can advance locally)
+    let localSyncTime = null; // milliseconds since epoch when we last synced with server
+    let initialElapsedSeconds = 0; // elapsed seconds recorded on server at the last sync
+    let offsetMinutes = 0; // minute offset to display (halftime offset)
+    let isRunning = false; // whether the clock is currently running
+    let clockInterval = null; // local ticking interval
+    // track previous scores to trigger animations
+    let prevHomeScore = null;
+    let prevAwayScore = null;
+
+    function updateClockDisplay() {
+            const clockElement = document.getElementById('clock');
+
+            // Compute current elapsed seconds from server base values and local time
+            let baseElapsed = initialElapsedSeconds || 0;
+            if (isRunning && localSyncTime) {
+                // Advance from the snapshot using local time to avoid relying on server startTime
+                baseElapsed += Math.floor((Date.now() - localSyncTime) / 1000);
+            }
+
+            const totalElapsed = baseElapsed + ((offsetMinutes || 0) * 60);
+            const minutes = Math.floor(totalElapsed / 60);
+            const seconds = totalElapsed % 60;
+            const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            clockElement.textContent = formattedTime;
+            requestAnimationFrame(fitScoreboardLayout);
+            // Debug only: show computed values occasionally
+            // console.log('Clock element updated with elapsedTime:', formattedTime);
+        }
+
+        // Animate score element when it changes
+        function animateScoreElement(el) {
+            if (!el) return;
+            // bump the score
+            el.classList.add('score-bump');
+            // create emoji
+            const container = el.parentElement || document.body;
+            const emoji = document.createElement('div');
+            emoji.className = 'goal-emoji';
+            emoji.textContent = '⚽';
+            // position relative container
+            container.style.position = container.style.position || 'relative';
+            container.appendChild(emoji);
+            // cleanup after animation
+            setTimeout(() => {
+                el.classList.remove('score-bump');
+            }, 450);
+            setTimeout(() => {
+                if (emoji && emoji.parentElement) emoji.parentElement.removeChild(emoji);
+            }, 900);
+        }
+
+        function startClock(startTime, elapsedTime, newOffsetMinutes = 0) {
+            console.log('startClock called with:', { startTime, elapsedTime, newOffsetMinutes });
+
+            // Update base values from server (always update so we resync even when already running)
+            // We record the server's elapsedSeconds snapshot and mark the local time
+            // we received that snapshot. This avoids double-counting if the server
+            // also sends an elapsedSeconds that already includes time since start.
+            localSyncTime = Date.now();
+            initialElapsedSeconds = typeof elapsedTime === 'number' ? elapsedTime : 0;
+            offsetMinutes = typeof newOffsetMinutes === 'number' ? newOffsetMinutes : offsetMinutes;
+            isRunning = true;
+
+            // Only resync if the server snapshot meaningfully differs from our local prediction.
+            // This avoids resetting localSyncTime on every poll which can cause the display to
+            // jump in multi-second increments due to timing jitter.
+            const serverElapsed = typeof elapsedTime === 'number' ? elapsedTime : 0;
+            let shouldResync = true;
+            if (isRunning && localSyncTime !== null) {
+                const predicted = initialElapsedSeconds + Math.floor((Date.now() - localSyncTime) / 1000);
+                // If predicted and server values are within 1 second, skip resync
+                if (Math.abs(predicted - serverElapsed) <= 1) {
+                    shouldResync = false;
+                }
+            }
+
+            if (shouldResync) {
+                localSyncTime = Date.now();
+                initialElapsedSeconds = serverElapsed;
+                console.log('Resyncing clock base values:', { initialElapsedSeconds, offsetMinutes, isRunning });
+            }
+
+            // Start local interval if it's not already running
+            if (!clockInterval) {
+                // Use 250ms updates for smooth seconds changes
+                clockInterval = setInterval(updateClockDisplay, 250);
+            }
+            // Immediately refresh display after (possible) resync
+            updateClockDisplay();
+        }
+
+        function stopClock() {
+            isRunning = false;
+            if (clockInterval) {
+                clearInterval(clockInterval);
+                clockInterval = null;
+            }
+        }
+
+        function resetClock() {
+            stopClock();
+            localSyncTime = null;
+            initialElapsedSeconds = 0;
+            offsetMinutes = 0;
+            const clockElement = document.getElementById('clock');
+            clockElement.textContent = '00:00';
+        }
+
+        // Previously this added offset repeatedly on every poll. Now we set the offsetMinutes base so
+        // the calculated display includes it exactly once.
+        function setMinuteOffset(newOffsetMinutes) {
+            console.log('Setting minute offset to:', newOffsetMinutes);
+            offsetMinutes = newOffsetMinutes || 0;
+            updateClockDisplay();
+        }
+
+        // Function to fetch and update display data
+        function fetchAndUpdateDisplayData() {
+            fetch('/api/display-data')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    console.log('Fetched data:', data); // Debugging
+
+                    // Update clock
+                    const clockElement = document.getElementById('clock');
+                    clockElement.textContent = data.time;
+
+                    // Update team names and scores
+                    const team1NameElement = document.getElementById('team1Name');
+                    const team1ScoreElement = document.getElementById('team1Score');
+                    const team2NameElement = document.getElementById('team2Name');
+                    const team2ScoreElement = document.getElementById('team2Score');
+
+                    if (team1NameElement && team1ScoreElement && team2NameElement && team2ScoreElement) {
+                        applyTeamDisplayData(data);
+                    } else {
+                        console.error('Team elements not found in the DOM');
+                    }
+
+                    // Apply offsetMinutes to the clock (set base offset so it's not repeatedly added)
+                    if (typeof data.offsetMinutes !== 'undefined') {
+                        console.log('Setting offsetMinutes in fetchAndUpdateDisplayData:', data.offsetMinutes); // Debugging
+                        setMinuteOffset(data.offsetMinutes);
+                    } else {
+                        console.warn('No offsetMinutes received from backend.');
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching display data:', error);
+                });
+        }
+
+        async function pollDisplayData() {
+            setInterval(async () => {
+                try {
+                    const response = await fetch('/api/display-data');
+                    const data = await response.json();
+
+                    console.log('Polling data:', data.clock); // Debugging
+                    console.log('Polling data after sync:', data); // Debugging
+
+                    if (data.success) {
+                        const team1NameElement = document.getElementById('team1Name');
+                        const team1ScoreElement = document.getElementById('team1Score');
+                        const team2NameElement = document.getElementById('team2Name');
+                        const team2ScoreElement = document.getElementById('team2Score');
+
+                        if (team1NameElement && team1ScoreElement && team2NameElement && team2ScoreElement) {
+                            applyTeamDisplayData(data);
+                        } else {
+                            console.error('Ein oder mehrere Elemente fehlen im DOM.');
+                        }
+
+                        if (data.clock || typeof data.offsetMinutes !== 'undefined') {
+                            // Prefer offset inside data.clock but fall back to top-level data.offsetMinutes
+                            const offsetMinutesResolved = (data && data.clock && typeof data.clock.offsetMinutes !== 'undefined') ? data.clock.offsetMinutes : (typeof data.offsetMinutes !== 'undefined' ? data.offsetMinutes : 0);
+                            console.log('Offset minutes received from backend (resolved):', offsetMinutesResolved); // Debugging
+
+                            // Update local offset base (do not repeatedly add)
+                            setMinuteOffset(offsetMinutesResolved);
+
+                            if (data.clock && data.clock.running) {
+                                console.log('Starting clock with data:', data.clock);
+                                // prefer clock.elapsedTime, but fall back to top-level elapsedSeconds
+                                const elapsed = typeof data.clock.elapsedTime === 'number' ? data.clock.elapsedTime : (data.elapsedSeconds || 0);
+                                startClock(data.clock.startTime, elapsed, offsetMinutesResolved);
+                            } else {
+                                console.log('Stopping clock as it is not running.');
+                                stopClock();
+                                // show static time from server
+                                const clockElement = document.getElementById('clock');
+                                if (typeof data.time !== 'undefined') {
+                                    clockElement.textContent = data.time;
+                                }
+                            }
+                        } else {
+                            console.warn('Clock data is missing in the backend response.');
+                        }
+                    } else {
+                        console.error('Fehler beim Abrufen der Anzeigedaten:', data.message);
+                    }
+                } catch (error) {
+                    console.error('Error fetching display data:', error);
+                }
+            }, 1000); // Adjusted polling interval to 1000ms
+        }
+
+        // Start polling when the page loads
+        window.onload = () => {
+            initSponsorTicker();
+            fitScoreboardLayout();
+            // Try to use Server-Sent Events for instant updates; fall back to polling
+            if (typeof EventSource !== 'undefined') {
+                try {
+                    const es = new EventSource('/api/stream');
+                    es.onmessage = (ev) => {
+                        try {
+                            const data = JSON.parse(ev.data);
+                            console.log('SSE received display data:', data);
+                            if (data.team1 || typeof data.homeTeam !== 'undefined' || typeof data.awayTeam !== 'undefined') {
+                                applyTeamDisplayData(data);
+                            }
+                            // Update clock state from broadcast
+                            const sseOffset = typeof data.offsetMinutes === 'number' ? data.offsetMinutes : 0;
+                            setMinuteOffset(sseOffset);
+                            if (data.isGameActive) {
+                                const elapsed = typeof data.elapsedSeconds === 'number' ? data.elapsedSeconds : 0;
+                                startClock(data.startTime || null, elapsed, sseOffset);
+                            } else {
+                                stopClock();
+                                // show static time
+                                if (typeof data.time !== 'undefined') {
+                                    document.getElementById('clock').textContent = data.time;
+                                }
+                            }
+                        } catch (e) {
+                            console.error('Error parsing SSE data:', e);
+                        }
+                    };
+                    es.onerror = (err) => {
+                        console.warn('SSE connection error, falling back to polling', err);
+                        // Clean up and start polling
+                        es.close();
+                        pollDisplayData();
+                    };
+                } catch (e) {
+                    console.warn('SSE not available, using polling', e);
+                    pollDisplayData();
+                }
+            } else {
+                pollDisplayData();
+            }
+        };
+
+        window.addEventListener('resize', () => {
+            requestAnimationFrame(fitScoreboardLayout);
+        });
+    </script>
+</body>
+</html>

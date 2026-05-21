@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin-Bereich</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input, select, button {
+            padding: 10px;
+            font-size: 16px;
+            margin: 5px;
+        }
+        button {
+            cursor: pointer;
+        }
+        .score-controls {
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+        }
+        .score-controls button {
+            margin: 0 5px;
+        }
+        /* Animation helpers for score bump */
+        .score-container {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .score-bump {
+            animation: bump 400ms ease;
+        }
+        @keyframes bump {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.4); }
+            100% { transform: scale(1); }
+        }
+        .goal-emoji {
+            position: absolute;
+            left: 50%;
+            top: -10px;
+            transform: translateX(-50%);
+            animation: flyup 800ms ease forwards;
+            pointer-events: none;
+            font-size: 24px;
+            opacity: 1;
+            will-change: transform, opacity;
+        }
+        @keyframes flyup {
+            0% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+            100% { opacity: 0; transform: translate(-50%, -60px) scale(1.2); }
+        }
+        .clock {
+            font-size: 24px;
+            margin: 20px 0;
+        }
+        .status-box,
+        .cache-box {
+            margin: 20px 0;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            background: #f7f7f7;
+        }
+        .hidden-debug {
+            display: none;
+        }
+        .cache-box pre {
+            margin: 10px 0 0;
+            max-height: 320px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .preset-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .games-row {
+            display: flex;
+            align-items: end;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .games-row .field-grow {
+            flex: 1 1 320px;
+        }
+        .games-row button {
+            margin-bottom: 5px;
+        }
+        .preset-button.is-active {
+            background: #0a5bd8;
+            color: #fff;
+            border-color: #0a5bd8;
+        }
+        #startClock {
+            background: #1f8f47;
+            border: 1px solid #1f8f47;
+            color: #fff;
+        }
+        #stopClock {
+            background: #c53b35;
+            border: 1px solid #c53b35;
+            color: #fff;
+        }
+        #startClock:disabled,
+        #stopClock:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+        #syncDisplay {
+            font-size: 20px;
+            padding: 14px 22px;
+            border: 3px solid #0a5bd8;
+            border-radius: 8px;
+            background: #fff;
+            color: #0a5bd8;
+            font-weight: 700;
+        }
+    </style>
+</head>
+<body>
+    <h1>Admin-Bereich</h1>
+
+    <div class="form-group games-row">
+        <div class="field-grow">
+            <label for="gamesDropdown">Künftige Spiele:</label>
+            <select id="gamesDropdown">
+                <option value="">-- Wähle ein Spiel --</option>
+                <option value="manual">Manuell eingeben</option>
+            </select>
+        </div>
+        <button id="syncGamesCache">Naechste Spiele synchronisieren</button>
+    </div>
+
+    <div class="status-box hidden-debug">
+        <strong>Datenquelle:</strong> <span id="gamesSource">Lade...</span><br>
+        <strong>Dropdown-Zeitraum:</strong> Heute bis 7 Tage im Voraus<br>
+        <strong>Gespeicherte zukünftige Spiele:</strong> <span id="cacheCount">0</span><br>
+        <strong>Letzte erfolgreiche Aktualisierung:</strong> <span id="lastRefresh">Noch keine</span>
+    </div>
+
+    <div class="cache-box hidden-debug">
+        <strong>Gespeicherte JSON-Dateien:</strong> <span id="cachePath">backend/data/games-cache.json</span>
+        <pre id="gamesCachePreview">Lade Cache...</pre>
+    </div>
+
+    <div class="form-group">
+        <label for="homeTeam">Heimteam:</label>
+        <input type="text" id="homeTeam" readonly>
+    </div>
+
+    <div class="form-group">
+        <label for="awayTeam">Gastteam:</label>
+        <input type="text" id="awayTeam" readonly>
+    </div>
+
+    <div class="form-group">
+        <label>Tore Heimteam:</label>
+        <div class="score-controls">
+            <button id="homeScoreDown">-</button>
+            <input type="number" id="homeScore" value="0" readonly>
+            <button id="homeScoreUp">+</button>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Tore Gastteam:</label>
+        <div class="score-controls">
+            <button id="awayScoreDown">-</button>
+            <div class="score-container">
+                <input type="number" id="awayScore" value="0" readonly>
+            </div>
+            <button id="awayScoreUp">+</button>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Uhr:</label>
+        <div class="clock" id="clock">00:00</div>
+        <button id="startClock">Start</button>
+        <button id="stopClock">Stopp</button>
+        <button id="resetClock">Uhr zurücksetzen</button>
+    </div>
+
+    <div class="form-group">
+        <label for="halftimeLength">Halbzeitlänge (Minuten):</label>
+        <select id="halftimeLength">
+            <option value="15">15</option>
+            <option value="20">20</option>
+            <option value="25">25</option>
+            <option value="30">30</option>
+            <option value="35">35</option>
+            <option value="40">40</option>
+            <option value="45" selected>45</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>Voreinstellungen:</label>
+        <div class="preset-buttons">
+            <button id="presetFirstHalf" class="preset-button">1. Halbzeit</button>
+            <button id="presetSecondHalf" class="preset-button">2. Halbzeit</button>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <button id="syncDisplay">Anzeigetafel Synchronisieren</button>
+    </div>
+
+    <script>
+        // Handle manual input
+        document.getElementById('gamesDropdown').addEventListener('change', function() {
+            const homeTeamField = document.getElementById('homeTeam');
+            const awayTeamField = document.getElementById('awayTeam');
+            const homeScoreField = document.getElementById('homeScore');
+            const awayScoreField = document.getElementById('awayScore');
+
+            homeScoreField.value = 0;
+            awayScoreField.value = 0;
+
+            if (this.value === 'manual') {
+                homeTeamField.removeAttribute('readonly');
+                awayTeamField.removeAttribute('readonly');
+                homeTeamField.value = '';
+                awayTeamField.value = '';
+            } else {
+                const selectedGame = JSON.parse(this.value);
+                homeTeamField.value = selectedGame.homeTeam;
+                awayTeamField.value = selectedGame.awayTeam;
+                homeTeamField.setAttribute('readonly', true);
+                awayTeamField.setAttribute('readonly', true);
+            }
+        });
+
+        function syncCurrentDisplayState() {
+            return fetch('/api/update-display', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    homeTeam: document.getElementById('homeTeam').value,
+                    awayTeam: document.getElementById('awayTeam').value,
+                    homeScore: document.getElementById('homeScore').value,
+                    awayScore: document.getElementById('awayScore').value
+                }),
+            }).then(response => response.json());
+        }
+
+        // Score controls
+        function updateDisplayData() {
+            return syncCurrentDisplayState()
+                .then(data => {
+                    if (data.success) {
+                        console.log('Display data updated successfully');
+                    } else {
+                        console.error('Error updating display data:', data.message);
+                    }
+                })
+                .catch(error => console.error('Error updating display data:', error));
+        }
+
+        document.getElementById('homeScoreUp').addEventListener('click', () => {
+            const homeScore = document.getElementById('homeScore');
+            homeScore.value = parseInt(homeScore.value) + 1;
+            updateDisplayData();
+        });
+
+        document.getElementById('homeScoreDown').addEventListener('click', () => {
+            const homeScore = document.getElementById('homeScore');
+            if (parseInt(homeScore.value) > 0) {
+                homeScore.value = parseInt(homeScore.value) - 1;
+                updateDisplayData();
+            }
+        });
+
+        document.getElementById('awayScoreUp').addEventListener('click', () => {
+            const awayScore = document.getElementById('awayScore');
+            awayScore.value = parseInt(awayScore.value) + 1;
+            updateDisplayData();
+            // animate the score bump
+            animateScore(document.getElementById('awayScore'));
+        });
+
+        document.getElementById('awayScoreDown').addEventListener('click', () => {
+            const awayScore = document.getElementById('awayScore');
+            if (parseInt(awayScore.value) > 0) {
+                awayScore.value = parseInt(awayScore.value) - 1;
+                updateDisplayData();
+            }
+        });
+
+        // Clock functionality
+        let clockInterval;
+        let seconds = 0;
+        let adminOffsetMinutes = 0; // current configured offset for admin display
+        let selectedPreset = null;
+        let isClockRunningLocally = false;
+
+        function setActivePreset(presetId) {
+            selectedPreset = presetId;
+            document.getElementById('presetFirstHalf').classList.toggle('is-active', presetId === 'firstHalf');
+            document.getElementById('presetSecondHalf').classList.toggle('is-active', presetId === 'secondHalf');
+        }
+
+        function updateClock() {
+            const totalSeconds = seconds + (adminOffsetMinutes * 60);
+            const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const secs = (totalSeconds % 60).toString().padStart(2, '0');
+            document.getElementById('clock').textContent = `${minutes}:${secs}`;
+        }
+
+        function updateClockWithOffset(offsetMinutes) {
+            adminOffsetMinutes = offsetMinutes || 0;
+            const totalSeconds = seconds + adminOffsetMinutes * 60;
+            const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, '0');
+            const secs = (totalSeconds % 60).toString().padStart(2, '0');
+            document.getElementById('clock').textContent = `${minutes}:${secs}`;
+            console.log(`Admin clock updated with offset: ${adminOffsetMinutes} minutes`);
+        }
+
+        function syncDisplaySettings() {
+            return fetch('/api/update-display', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    homeTeam: document.getElementById('homeTeam').value,
+                    awayTeam: document.getElementById('awayTeam').value,
+                    homeScore: document.getElementById('homeScore').value,
+                    awayScore: document.getElementById('awayScore').value,
+                    offsetMinutes: adminOffsetMinutes,
+                    clock: {
+                        startTime: Date.now() - (seconds * 1000),
+                        elapsedTime: seconds,
+                        running: isClockRunningLocally,
+                        offsetMinutes: adminOffsetMinutes
+                    }
+                }),
+            }).then(response => response.json());
+        }
+
+        function startLocalClock(offsetMinutes = 0) {
+            // only set the adminOffsetMinutes, do not modify seconds here
+            adminOffsetMinutes = offsetMinutes || 0;
+            isClockRunningLocally = true;
+            console.log(`Starting clock with offset: ${adminOffsetMinutes} minutes`);
+            if (!clockInterval) {
+                clockInterval = setInterval(() => {
+                    seconds++;
+                    updateClock();
+                }, 1000);
+            }
+        }
+
+        function stopLocalClock() {
+            clearInterval(clockInterval);
+            clockInterval = null;
+            isClockRunningLocally = false;
+        }
+
+        function resetLocalClock() {
+            clearInterval(clockInterval);
+            clockInterval = null;
+            isClockRunningLocally = false;
+            seconds = 0;
+            updateClock();
+        }
+
+        document.getElementById('startClock').addEventListener('click', () => {
+            // Use the adminOffsetMinutes variable (presets or manual calls set this)
+            const offsetMinutes = adminOffsetMinutes || 0;
+            const elapsedSeconds = seconds || 0;
+
+            syncDisplaySettings()
+            .then(syncData => {
+                if (!syncData.success) {
+                    throw new Error(syncData.message || 'Anzeige konnte nicht synchronisiert werden');
+                }
+
+                // Start the local clock with the configured admin offset
+                startLocalClock(offsetMinutes);
+
+                return fetch('/api/start-clock', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    elapsedSeconds,
+                    offsetMinutes
+                })
+                });
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    throw new Error(data.message || 'Uhr konnte nicht gestartet werden');
+                }
+                document.getElementById('startClock').disabled = true;
+                document.getElementById('stopClock').disabled = false;
+            })
+            .catch(error => {
+                stopLocalClock();
+                console.error('Error starting clock:', error);
+                alert('Fehler beim Starten der Uhr: ' + error.message);
+                    document.getElementById('startClock').disabled = false;
+                    document.getElementById('stopClock').disabled = true;
+            });
+        });
+
+        // Hide the dedicated Reset button - Stop now also resets the local UI
+        const resetBtn = document.getElementById('resetClock');
+        if (resetBtn) resetBtn.style.display = 'none';
+
+        document.getElementById('stopClock').addEventListener('click', () => {
+            // Stop and reset local clock UI (but keep halftime dropdown as-is)
+            stopLocalClock();
+            seconds = 0;
+            adminOffsetMinutes = 0;
+            updateClock();
+
+            fetch('/api/reset-clock', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    throw new Error(data.message || 'Uhr konnte nicht zurueckgesetzt werden');
+                }
+            })
+            .catch(error => {
+                console.error('Error stopping clock:', error);
+                alert('Fehler beim Stoppen der Uhr: ' + error.message);
+            });
+
+            // Ensure Start is re-enabled
+            const startBtn = document.getElementById('startClock');
+            if (startBtn) startBtn.disabled = false;
+            const stopBtn = document.getElementById('stopClock');
+            if (stopBtn) stopBtn.disabled = true;
+        });
+
+        document.getElementById('resetClock').addEventListener('click', () => {
+            resetLocalClock();
+            fetch('/api/reset-clock', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success) {
+                    throw new Error(data.message || 'Uhr konnte nicht zurückgesetzt werden');
+                }
+            })
+            .catch(error => {
+                console.error('Error resetting clock:', error);
+                alert('Fehler beim Zurücksetzen der Uhr: ' + error.message);
+            });
+            document.getElementById('startClock').disabled = false; // Re-enable the Start button
+            document.getElementById('stopClock').disabled = true;
+            document.getElementById('resetClock').disabled = true; // Disable the Reset button
+        });
+
+        // Halftime preset buttons
+        document.getElementById('presetFirstHalf').addEventListener('click', () => {
+            const offsetMinutes = 0;
+            setActivePreset('firstHalf');
+
+            clearInterval(clockInterval);
+            clockInterval = null;
+            isClockRunningLocally = false;
+            seconds = 0;
+            updateClockWithOffset(0);
+            document.getElementById('startClock').disabled = false;
+            document.getElementById('stopClock').disabled = true;
+            console.log('Preset First Half clicked: Offset set to 0');
+        });
+
+        document.getElementById('presetSecondHalf').addEventListener('click', () => {
+            // Read the selected halftime value and use it as offset for second half
+            const halftimeDropdown = document.getElementById('halftimeLength');
+            const offsetMinutes = parseInt(halftimeDropdown.value, 10);
+            setActivePreset('secondHalf');
+
+            clearInterval(clockInterval);
+            clockInterval = null;
+            isClockRunningLocally = false;
+            seconds = 0;
+
+            updateClockWithOffset(offsetMinutes);
+            document.getElementById('startClock').disabled = false;
+            document.getElementById('stopClock').disabled = true;
+            console.log(`Preset Second Half clicked: Offset set to ${offsetMinutes}`);
+        });
+
+        // Synchronize settings with the display
+        document.getElementById('syncDisplay').addEventListener('click', () => {
+            syncDisplaySettings()
+            .then(data => {
+                if (data.success) {
+                    console.log('Display synchronized successfully');
+                } else {
+                    console.error('Error synchronizing display:', data.message);
+                }
+            })
+            .catch(error => {
+                alert('Fehler beim Aktualisieren der Anzeige: ' + error.message);
+            });
+        });
+
+        // Update display data after score change
+        function updateDisplay() {
+            fetch('/api/display-data')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Display updated:', data);
+                })
+                .catch(error => console.error('Error updating display:', error));
+        }
+
+        function formatRefreshTimestamp(value) {
+            if (!value) {
+                return 'Noch keine';
+            }
+
+            const date = new Date(value);
+            return Number.isNaN(date.getTime()) ? value : date.toLocaleString('de-DE');
+        }
+
+        function normalizeLabelSegment(value) {
+            return String(value || '')
+                .replace(/\s+/g, ' ')
+                .replace(/\s*[-,:]\s*$/g, '')
+                .trim();
+        }
+
+        function sanitizeCompetitionText(value, dateTimeText) {
+            const normalizedDateTime = normalizeLabelSegment(value ? dateTimeText : '');
+            const seen = new Set();
+
+            return String(value || '')
+                .split('|')
+                .map(segment => normalizeLabelSegment(segment))
+                .map(segment => segment.replace(/\b\w{2},?\s*\d{1,2}\.\d{1,2}\.\d{2,4}\b/gi, '').trim())
+                .map(segment => segment.replace(/\b\d{1,2}:\d{2}\s*(Uhr)?\b/gi, '').trim())
+                .map(segment => normalizeLabelSegment(segment))
+                .filter(segment => segment && (!normalizedDateTime || !normalizedDateTime.includes(segment)))
+                .filter(segment => {
+                    const normalized = segment.toLowerCase();
+                    if (seen.has(normalized)) {
+                        return false;
+                    }
+                    seen.add(normalized);
+                    return true;
+                })
+                .join(' | ');
+        }
+
+        function buildGameOptionLabel(game) {
+            const dateTimeLabel = normalizeLabelSegment(game.dateTime);
+            const competitionLabel = sanitizeCompetitionText(game.competition, game.dateTime);
+            const homeTeam = normalizeLabelSegment(game.homeTeam);
+            const awayTeam = normalizeLabelSegment(game.awayTeam);
+            const details = [dateTimeLabel, competitionLabel].filter(Boolean).join(' | ');
+            return `${details} | ${homeTeam} : ${awayTeam}`;
+        }
+
+        function renderGamesCache(result) {
+            const cachePreview = document.getElementById('gamesCachePreview');
+            const cachePath = document.getElementById('cachePath');
+            const cacheCount = document.getElementById('cacheCount');
+            const gamesSource = document.getElementById('gamesSource');
+            const lastRefresh = document.getElementById('lastRefresh');
+
+            const cacheFile = result.cachePath || 'backend/data/games-cache.json';
+            const backupFile = result.backupPath || 'backend/data/games-backup.json';
+
+            cachePath.textContent = `${cacheFile} | Backup: ${backupFile}`;
+            cacheCount.textContent = String(result.totalFutureGames ?? result.cacheCount ?? 0);
+            gamesSource.textContent = result.source === 'live'
+                ? 'Naechste Spiele geladen und in die Backup-Datei gemergt'
+                : 'Lokaler Cache (Boot-Update fehlgeschlagen oder offline)';
+            lastRefresh.textContent = formatRefreshTimestamp(result.lastRefreshSuccess);
+            cachePreview.textContent = JSON.stringify(result.data || [], null, 2);
+        }
+
+        function populateGamesDropdown(games) {
+            const dropdown = document.getElementById('gamesDropdown');
+            dropdown.innerHTML = '<option value="">-- Wähle ein Spiel --</option>';
+            dropdown.innerHTML += '<option value="manual">Manuell eingeben</option>';
+
+            if (Array.isArray(games) && games.length > 0) {
+                games.forEach(game => {
+                    const option = document.createElement('option');
+                    option.value = JSON.stringify(game);
+                    option.textContent = buildGameOptionLabel(game);
+                    dropdown.appendChild(option);
+                });
+                return;
+            }
+
+            dropdown.innerHTML += '<option value="">Keine Spiele verfügbar</option>';
+        }
+
+        async function fetchGamesCachePreview() {
+            const cachePreview = document.getElementById('gamesCachePreview');
+
+            try {
+                const response = await fetch('/api/games-cache');
+                const result = await response.json();
+
+                if (!result.success) {
+                    throw new Error(result.message || 'Cache konnte nicht geladen werden');
+                }
+
+                renderGamesCache(result);
+                return result;
+            } catch (error) {
+                console.error('Fehler beim Laden des Spiel-Caches:', error);
+                cachePreview.textContent = 'Cache konnte nicht geladen werden.';
+                throw error;
+            }
+        }
+
+        // Fetch and populate games dropdown
+        async function fetchGames() {
+            try {
+                const result = await fetchGamesCachePreview();
+                const games = Array.isArray(result.dropdownGames) ? result.dropdownGames : [];
+                populateGamesDropdown(result.success ? games : []);
+            } catch (error) {
+                console.error('Fehler beim Abrufen der Spiele:', error);
+                document.getElementById('gamesSource').textContent = 'Fehler beim Laden';
+                populateGamesDropdown([]);
+            }
+        }
+
+        async function syncGamesFromFussballDe() {
+            try {
+                const response = await fetch('/api/scrape');
+                const result = await response.json();
+                if (!response.ok || !result.success) {
+                    throw new Error(result.message || 'Synchronisierung fehlgeschlagen');
+                }
+
+                await fetchGames();
+            } catch (error) {
+                console.error('Fehler beim manuellen Spiel-Sync:', error);
+                alert('Fehler beim Laden der Naechste-Spiele-Daten: ' + error.message);
+            }
+        }
+
+        document.getElementById('syncGamesCache').addEventListener('click', syncGamesFromFussballDe);
+
+        // Call fetchGames on page load
+        window.addEventListener('load', fetchGames);
+
+        // Initialize clock
+        setActivePreset('firstHalf');
+        document.getElementById('stopClock').disabled = true;
+        updateClock();
+
+        // Score animation helper
+        function animateScore(scoreInput) {
+            if (!scoreInput) return;
+            // Add bump class
+            scoreInput.classList.add('score-bump');
+            // Create emoji element and attach to container
+            const container = scoreInput.closest('.score-container') || scoreInput.parentElement;
+            if (container) {
+                const emoji = document.createElement('div');
+                emoji.className = 'goal-emoji';
+                emoji.textContent = '⚽';
+                container.appendChild(emoji);
+                // remove emoji after animation
+                setTimeout(() => container.removeChild(emoji), 900);
+            }
+            // remove bump class after animation
+            setTimeout(() => scoreInput.classList.remove('score-bump'), 450);
+        }
+    </script>
+</body>
+</html>

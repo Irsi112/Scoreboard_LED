@@ -1,0 +1,15 @@
+backend/node_modules/
+*.log
+*.stackdump
+*.tar.gz
+*.zip
+
+backend/.after-state.json
+backend/.before-state.json
+backend/.build-body.json
+backend/.scrape-body.json
+backend/verify_server.log
+backend/backup_run.log
+
+.DS_Store
+Thumbs.db
