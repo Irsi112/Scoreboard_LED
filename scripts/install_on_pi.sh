@@ -142,48 +142,47 @@ unset DISPLAY
 unset XAUTHORITY
 unset GDK_BACKEND
 
-LOG_PATH="$HOME/scoreboard-kiosk.log"
+LOG_PATH="\$HOME/scoreboard-kiosk.log"
 SERVER_URL="http://127.0.0.1:3000/"
 BROWSER_URL="http://localhost:3000"
 
 gsettings set org.gnome.Epiphany ask-for-default false >/dev/null 2>&1 || true
 gsettings set org.gnome.Epiphany restore-session-policy 'crashed' >/dev/null 2>&1 || true
 gsettings set org.gnome.Epiphany homepage-url "\$BROWSER_URL" >/dev/null 2>&1 || true
-rm -rf "$HOME/.local/share/epiphany/sessions" "$HOME/.config/epiphany" >/dev/null 2>&1 || true
+rm -rf "\$HOME/.local/share/epiphany/sessions" "\$HOME/.config/epiphany" >/dev/null 2>&1 || true
 
 pkill -f '^epiphany ' >/dev/null 2>&1 || true
 pkill -f 'WebKit(Web|Network)Process' >/dev/null 2>&1 || true
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Waiting for scoreboard backend..." >>"$LOG_PATH"
+echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Waiting for scoreboard backend..." >>"\$LOG_PATH"
 ready=0
 for attempt in \$(seq 1 180); do
-  if curl -fsS "$SERVER_URL" >/dev/null 2>&1; then
+  if curl -fsS "\$SERVER_URL" >/dev/null 2>&1; then
     ready=1
     break
   fi
   sleep 2
 done
 
-if [ "$ready" -ne 1 ]; then
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] Backend not reachable, browser start skipped." >>"$LOG_PATH"
+if [ "\$ready" -ne 1 ]; then
+  echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Backend not reachable, browser start skipped." >>"\$LOG_PATH"
   exit 1
 fi
 
-echo "[$(date '+%Y-%m-%d %H:%M:%S')] Backend ready, starting kiosk browser." >>"$LOG_PATH"
-nohup /usr/bin/epiphany-browser "\$BROWSER_URL" >"$HOME/scoreboard-epiphany.log" 2>&1 &
+echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Backend ready, starting kiosk browser." >>"\$LOG_PATH"
+nohup /usr/bin/epiphany-browser "\$BROWSER_URL" >"\$HOME/scoreboard-epiphany.log" 2>&1 &
 EOF
 
   chmod +x "$HOME/bin/scoreboard-kiosk.sh"
 
-  rm -f "$HOME/.config/autostart/scoreboard-kiosk.desktop"
-  cat >"$HOME/.config/autostart/scoreboard-kiosk.desktop.disabled" <<EOF
+  cat >"$HOME/.config/autostart/scoreboard-kiosk.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Scoreboard Kiosk Disabled
+Name=Scoreboard Kiosk
 Exec=$HOME/bin/scoreboard-kiosk.sh
 Terminal=false
-X-GNOME-Autostart-enabled=false
-NoDisplay=true
+X-GNOME-Autostart-enabled=true
+NoDisplay=false
 EOF
 }
 

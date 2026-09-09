@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-HOSTNAME_VALUE="kylltal-scoreboard"
+HOSTNAME_VALUE="kylltalscoreboard"
 LOCAL_DISPLAY_URL="http://127.0.0.1:3000/"
-REMOTE_ADMIN_URL="http://${HOSTNAME_VALUE}.local:3000/admin.html"
+REMOTE_ADMIN_URL="http://kylltalscoreboard/ticker"
 
 find_project_root() {
   local candidate script_dir script_root
@@ -75,19 +75,38 @@ write_kiosk_launcher() {
 
   mkdir -p "$HOME/bin" "$HOME/.config/autostart"
 
-  cat >"$HOME/bin/scoreboard-kiosk.sh" <<EOF
+cat >"$HOME/bin/scoreboard-kiosk.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
 
-export XDG_RUNTIME_DIR="\${XDG_RUNTIME_DIR:-/run/user/\$(id -u)}"
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus
+export XDG_SESSION_TYPE=wayland
+export GDK_BACKEND=wayland
+WAYLAND_SOCKET=""
+for attempt in \$(seq 1 30); do
+  WAYLAND_SOCKET=\$(ls /run/user/$(id -u)/wayland-* 2>/dev/null | head -n 1 || true)
+  if [[ -n "\${WAYLAND_SOCKET:-}" ]]; then
+    break
+  fi
+  sleep 1
+done
+if [[ -n "\${WAYLAND_SOCKET:-}" ]]; then
+  export WAYLAND_DISPLAY=\$(basename "\$WAYLAND_SOCKET")
+else
+  echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Wayland socket not found after wait" >>"\$HOME/scoreboard-kiosk.log"
+fi
+export GTK_A11Y=none
+unset DISPLAY
+unset XAUTHORITY
 
 LOG_PATH="$HOME/scoreboard-kiosk.log"
 SERVER_URL="${LOCAL_DISPLAY_URL}"
 BROWSER_URL="${LOCAL_DISPLAY_URL}"
-BROWSER_COMMAND="${browser_command}"
+BROWSER_COMMAND="__SCOREBOARD_BROWSER_COMMAND__"
 
-touch "$LOG_PATH"
-echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Starting kiosk launcher with \${BROWSER_COMMAND}" >>"$LOG_PATH"
+touch "\$LOG_PATH"
+echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Starting kiosk launcher with \${BROWSER_COMMAND}" >>"\$LOG_PATH"
 
 if command -v unclutter >/dev/null 2>&1; then
   pkill -x unclutter >/dev/null 2>&1 || true
@@ -98,24 +117,32 @@ pkill -f 'chromium|epiphany-browser' >/dev/null 2>&1 || true
 
 ready=0
 for attempt in \$(seq 1 180); do
-  if curl -fsS "$SERVER_URL" >/dev/null 2>&1; then
+  if curl -fsS "\$SERVER_URL" >/dev/null 2>&1; then
     ready=1
     break
   fi
   sleep 2
 done
 
-if [[ "$ready" -ne 1 ]]; then
-  echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Backend not reachable at $SERVER_URL" >>"$LOG_PATH"
+if [[ "\$ready" -ne 1 ]]; then
+  echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Backend not reachable at \$SERVER_URL" >>"\$LOG_PATH"
   exit 1
 fi
 
-echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Backend reachable, launching browser" >>"$LOG_PATH"
+echo "[\$(date '+%Y-%m-%d %H:%M:%S')] Backend reachable, launching browser" >>"\$LOG_PATH"
 
-if [[ "$BROWSER_COMMAND" == chromium* ]]; then
-  exec "$BROWSER_COMMAND" \
+if [[ "\$BROWSER_COMMAND" == chromium* ]]; then
+  exec "\$BROWSER_COMMAND" \
+    --ozone-platform=wayland \
+    --no-sandbox \
+    --no-memcheck \
+    --enable-low-end-device-mode \
+    --disable-gpu \
+    --disable-gpu-compositing \
+    --disable-software-rasterizer \
+    --disable-gpu-sandbox \
     --kiosk \
-    --app="$BROWSER_URL" \
+    --app="\$BROWSER_URL" \
     --start-fullscreen \
     --incognito \
     --noerrdialogs \
@@ -126,7 +153,7 @@ if [[ "$BROWSER_COMMAND" == chromium* ]]; then
     --disable-features=TranslateUI
 fi
 
-exec "$BROWSER_COMMAND" "$BROWSER_URL"
+exec "\$BROWSER_COMMAND" "\$BROWSER_URL"
 EOF
 
   chmod +x "$HOME/bin/scoreboard-kiosk.sh"

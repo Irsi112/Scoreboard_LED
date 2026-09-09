@@ -55,7 +55,7 @@
             line-height: 0.95;
         }
         .team-info h2 {
-            font-size: var(--versus-size, clamp(2.2rem, 6vw, 3.8rem));
+            font-size: var(--versus-size, clamp(8rem, 18vw, 12rem));
             margin: 0;
             line-height: 1;
         }
@@ -261,6 +261,7 @@
     const AWAY_TEAM_LOGO_SRC = 'team2_logo.png';
     const VULKANIA_LOGO_SRC = 'vulkania.jpg';
     const GOAL_CELEBRATION_KEYWORDS = /kylltal|vulkania|vlukania/i;
+    const LOW_POWER_MODE = new URLSearchParams(window.location.search).get('perf') === 'low';
     let goalCelebrationTimer = null;
     let scoreboardBaseFontSizes = null;
 
@@ -454,6 +455,10 @@
     }
 
     function showGoalCelebration(teamName, logoSrc) {
+        if (LOW_POWER_MODE) {
+            return;
+        }
+
         const overlay = document.getElementById('goalCelebration');
         const teamLabel = document.getElementById('goalCelebrationTeam');
         const logo = document.getElementById('goalCelebrationLogo');
@@ -539,28 +544,44 @@
             score: data.awayScore
         };
 
-        team1NameElement.textContent = team1.name || 'Team 1';
+        let layoutMayNeedUpdate = false;
+
+        const nextTeam1Name = team1.name || 'Team 1';
+        if (team1NameElement.textContent !== nextTeam1Name) {
+            team1NameElement.textContent = nextTeam1Name;
+            layoutMayNeedUpdate = true;
+        }
+
         if (prevHomeScore !== null && Number(team1.score) !== Number(prevHomeScore)) {
             animateScoreElement(team1ScoreElement);
             if (Number(team1.score) > Number(prevHomeScore) && qualifiesForGoalCelebration(team1.name)) {
                 showGoalCelebration(team1.name, getGoalCelebrationLogoSrc(team1.name));
             }
+            layoutMayNeedUpdate = true;
         }
         team1ScoreElement.textContent = team1.score || 0;
 
-        team2NameElement.textContent = team2.name || 'Team 2';
+        const nextTeam2Name = team2.name || 'Team 2';
+        if (team2NameElement.textContent !== nextTeam2Name) {
+            team2NameElement.textContent = nextTeam2Name;
+            layoutMayNeedUpdate = true;
+        }
+
         if (prevAwayScore !== null && Number(team2.score) !== Number(prevAwayScore)) {
             animateScoreElement(team2ScoreElement);
             if (Number(team2.score) > Number(prevAwayScore) && qualifiesForGoalCelebration(team2.name)) {
                 showGoalCelebration(team2.name, getGoalCelebrationLogoSrc(team2.name));
             }
+            layoutMayNeedUpdate = true;
         }
         team2ScoreElement.textContent = team2.score || 0;
 
         prevHomeScore = Number(team1.score || 0);
         prevAwayScore = Number(team2.score || 0);
 
-        requestAnimationFrame(fitScoreboardLayout);
+        if (layoutMayNeedUpdate) {
+            requestAnimationFrame(fitScoreboardLayout);
+        }
     }
 
     // Sponsor ticker logic
@@ -644,7 +665,6 @@
             const seconds = totalElapsed % 60;
             const formattedTime = `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
             clockElement.textContent = formattedTime;
-            requestAnimationFrame(fitScoreboardLayout);
             // Debug only: show computed values occasionally
             // console.log('Clock element updated with elapsedTime:', formattedTime);
         }
@@ -654,6 +674,14 @@
             if (!el) return;
             // bump the score
             el.classList.add('score-bump');
+
+            if (LOW_POWER_MODE) {
+                setTimeout(() => {
+                    el.classList.remove('score-bump');
+                }, 300);
+                return;
+            }
+
             // create emoji
             const container = el.parentElement || document.body;
             const emoji = document.createElement('div');
@@ -704,7 +732,7 @@
 
             // Start local interval if it's not already running
             if (!clockInterval) {
-                // Use 250ms updates for smooth seconds changes
+                // Use 250ms updates for smoother seconds changes.
                 clockInterval = setInterval(updateClockDisplay, 250);
             }
             // Immediately refresh display after (possible) resync
@@ -787,6 +815,7 @@
                     console.log('Polling data after sync:', data); // Debugging
 
                     if (data.success) {
+                        // Apply team data
                         const team1NameElement = document.getElementById('team1Name');
                         const team1ScoreElement = document.getElementById('team1Score');
                         const team2NameElement = document.getElementById('team2Name');
@@ -798,30 +827,39 @@
                             console.error('Ein oder mehrere Elemente fehlen im DOM.');
                         }
 
-                        if (data.clock || typeof data.offsetMinutes !== 'undefined') {
-                            // Prefer offset inside data.clock but fall back to top-level data.offsetMinutes
-                            const offsetMinutesResolved = (data && data.clock && typeof data.clock.offsetMinutes !== 'undefined') ? data.clock.offsetMinutes : (typeof data.offsetMinutes !== 'undefined' ? data.offsetMinutes : 0);
-                            console.log('Offset minutes received from backend (resolved):', offsetMinutesResolved); // Debugging
+                        // Resolve offsetMinutes (prefer clock.offsetMinutes)
+                        const offsetMinutesResolved = (data && data.clock && typeof data.clock.offsetMinutes !== 'undefined')
+                            ? data.clock.offsetMinutes
+                            : (typeof data.offsetMinutes !== 'undefined' ? data.offsetMinutes : 0);
+                        setMinuteOffset(Number(offsetMinutesResolved) || 0);
 
-                            // Update local offset base (do not repeatedly add)
-                            setMinuteOffset(offsetMinutesResolved);
+                        // Prefer server-provided displayElapsedSeconds or clock.elapsedTime for authoritative state
+                        const serverElapsed = (typeof data.displayElapsedSeconds === 'number')
+                            ? Number(data.displayElapsedSeconds)
+                            : (data && data.clock && typeof data.clock.elapsedTime === 'number') ? data.clock.elapsedTime : (typeof data.elapsedSeconds === 'number' ? data.elapsedSeconds : undefined);
 
-                            if (data.clock && data.clock.running) {
-                                console.log('Starting clock with data:', data.clock);
-                                // prefer clock.elapsedTime, but fall back to top-level elapsedSeconds
-                                const elapsed = typeof data.clock.elapsedTime === 'number' ? data.clock.elapsedTime : (data.elapsedSeconds || 0);
-                                startClock(data.clock.startTime, elapsed, offsetMinutesResolved);
+                        const running = (data && data.clock && data.clock.running) || data.isGameActive || false;
+
+                        if (typeof serverElapsed !== 'undefined') {
+                            // Use startClock to resync local ticking logic consistently
+                            if (running) {
+                                startClock(data && data.clock ? data.clock.startTime : null, serverElapsed, offsetMinutesResolved);
                             } else {
-                                console.log('Stopping clock as it is not running.');
                                 stopClock();
-                                // show static time from server
-                                const clockElement = document.getElementById('clock');
-                                if (typeof data.time !== 'undefined') {
-                                    clockElement.textContent = data.time;
-                                }
+                                // display static server time
+                                const mins = Math.floor(serverElapsed / 60).toString().padStart(2, '0');
+                                const secsStr = (serverElapsed % 60).toString().padStart(2, '0');
+                                const clockEl = document.getElementById('clock');
+                                if (clockEl) clockEl.textContent = `${mins}:${secsStr}`;
                             }
                         } else {
-                            console.warn('Clock data is missing in the backend response.');
+                            // Fallback: if server sent human-readable time, display it; otherwise leave local ticking
+                            if (typeof data.time !== 'undefined') {
+                                const clockEl = document.getElementById('clock');
+                                if (clockEl) clockEl.textContent = data.time;
+                            } else {
+                                console.warn('Clock data is missing in the backend response.');
+                            }
                         }
                     } else {
                         console.error('Fehler beim Abrufen der Anzeigedaten:', data.message);
@@ -834,6 +872,10 @@
 
         // Start polling when the page loads
         window.onload = () => {
+            if (LOW_POWER_MODE) {
+                document.body.classList.add('low-power');
+            }
+
             initSponsorTicker();
             fitScoreboardLayout();
             // Try to use Server-Sent Events for instant updates; fall back to polling

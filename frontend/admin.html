@@ -134,6 +134,35 @@
 <body>
     <h1>Admin-Bereich</h1>
 
+    <style>
+        /* Tabs */
+        .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+        .tab { padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; background:#fff }
+        .tab.disabled { opacity: 0.55; cursor: not-allowed; pointer-events: auto; }
+        .tab.active { background:#0a5bd8; color:#fff; }
+        .tab-panel { display:none; }
+        .tab-panel.active { display:block; }
+        .list-row { display:flex; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #eee }
+    </style>
+
+    <div class="tabs">
+        <div class="tab active" data-tab="controls">Kontrolle</div>
+        <div class="tab disabled" data-tab="game-settings" title="Diese Funktion ist deaktiviert">Spieleinstellungen</div>
+        <div class="tab disabled" data-tab="sponsors" title="Diese Funktion ist deaktiviert">Sponsoren Verwalten</div>
+    </div>
+
+    <script>
+        // Prevent clicks on disabled tabs
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('.tab.disabled').forEach(t => {
+                t.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            });
+        });
+    </script>
+
     <div class="form-group games-row">
         <div class="field-grow">
             <label for="gamesDropdown">Künftige Spiele:</label>
@@ -196,6 +225,12 @@
     </div>
 
     <div class="form-group">
+        <label for="manualStartTime">Manuelle Startzeit (MM:SS) — wird bei "Anzeigetafel Synchronisieren" übertragen:</label>
+        <input type="text" id="manualStartTime" placeholder="05:00" maxlength="5">
+        <div style="font-size:12px;color:#666;margin-top:6px;">Gib die bereits verstrichene Spielzeit im Format MM:SS ein; das Feld wird nach erfolgreichem Synchronisieren automatisch geleert.</div>
+    </div>
+
+    <div class="form-group">
         <label for="halftimeLength">Halbzeitlänge (Minuten):</label>
         <select id="halftimeLength">
             <option value="15">15</option>
@@ -218,6 +253,59 @@
 
     <div class="form-group">
         <button id="syncDisplay">Anzeigetafel Synchronisieren</button>
+    </div>
+
+    <!-- Tabs content -->
+    <div id="panel-controls" class="tab-panel active">
+        <!-- existing controls are above and remain visible -->
+    </div>
+
+    <div id="panel-game-settings" class="tab-panel">
+        <h2>Spieleinstellungen</h2>
+        <div class="form-group">
+            <label>Automatische Aufstellungs-Synchronisation:</label>
+            <select id="autoSyncSelect">
+                <option value="0">Aus</option>
+                <option value="1">Ein</option>
+            </select>
+            <label>Sync Minuten vor Spielbeginn:</label>
+            <input type="number" id="syncBeforeMinutes" value="30" min="5" max="120">
+            <button id="saveGameSettings">Speichern</button>
+        </div>
+        <div class="form-group">
+            <button id="syncLineupNow">Aufstellung jetzt synchronisieren (Test)</button>
+        </div>
+    </div>
+
+    <div id="panel-sponsors" class="tab-panel">
+        <h2>Sponsoren Verwalten</h2>
+        <div class="form-group">
+            <form id="sponsorForm">
+                <label>Name:</label>
+                <input type="text" name="name" id="sponsorName">
+                <label>Ordner:</label>
+                <select name="group_name" id="sponsorGroup">
+                    <option value="01_Hauptsponsoren_ 1000 Euro +">01_Hauptsponsoren_ 1000 Euro +</option>
+                    <option value="02_Co-Sponsoren_ 500 Euro +">02_Co-Sponsoren_ 500 Euro +</option>
+                    <option value="03_Premiumpartner_ 250 Euro +">03_Premiumpartner_ 250 Euro +</option>
+                    <option value="04_Partner SG 150 Euro">04_Partner SG 150 Euro</option>
+                </select>
+                <label>Bild (Logo):</label>
+                <input type="file" name="image" id="sponsorImage" accept="image/*">
+                <label>Priorität:</label>
+                <input type="number" name="priority" id="sponsorPriority" value="50" min="1" max="999">
+                <label>Aktiv:</label>
+                <label><input type="checkbox" id="sponsorActive" checked> Aktiv</label>
+                <div>
+                    <button type="button" id="createSponsor">Erstellen</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="form-group">
+            <h3>Bestehende Sponsoren</h3>
+            <div id="sponsorsList">Lade...</div>
+        </div>
     </div>
 
     <script>
@@ -333,25 +421,94 @@
         }
 
         function syncDisplaySettings() {
+            // If a manual start time is provided in MM:SS, include it in the payload
+            const manualInput = document.getElementById('manualStartTime');
+            const manualVal = manualInput && (manualInput.value || '').trim();
+            let manualClock = null;
+            if (manualVal && /^[0-9]{1,2}:[0-9]{2}$/.test(manualVal)) {
+                const [mm, ss] = manualVal.split(':').map(n => parseInt(n, 10));
+                const elapsedSecs = (mm * 60) + ss;
+                const startTime = Date.now() - (elapsedSecs * 1000);
+                manualClock = {
+                    startTime: startTime,
+                    elapsedTime: elapsedSecs,
+                    running: true,
+                    offsetMinutes: adminOffsetMinutes
+                };
+                // Apply immediately to admin UI so Start uses this value
+                try {
+                    seconds = Number(elapsedSecs) || 0;
+                    adminOffsetMinutes = Number(adminOffsetMinutes) || 0;
+                    updateClock();
+                } catch (e) { console.error('Error applying manual input locally', e); }
+            }
             return fetch('/api/update-display', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
-                body: JSON.stringify({
+                body: JSON.stringify(Object.assign({
                     homeTeam: document.getElementById('homeTeam').value,
                     awayTeam: document.getElementById('awayTeam').value,
                     homeScore: document.getElementById('homeScore').value,
                     awayScore: document.getElementById('awayScore').value,
-                    offsetMinutes: adminOffsetMinutes,
-                    clock: {
-                        startTime: Date.now() - (seconds * 1000),
-                        elapsedTime: seconds,
-                        running: isClockRunningLocally,
-                        offsetMinutes: adminOffsetMinutes
+                    offsetMinutes: adminOffsetMinutes
+                }, manualClock ? { clock: manualClock } : {}))
+            }).then(response => response.json()).then(json => {
+                // If we sent a manual clock and sync succeeded, clear the input
+                if (manualClock && json && json.success) {
+                    try { document.getElementById('manualStartTime').value = ''; } catch(e){}
+                }
+                // If backend returned authoritative clock info, update local admin clock state
+                try {
+                    if (json && json.success) {
+                        // Prefer clock.elapsedTime or displayElapsedSeconds
+                        const serverElapsed = (json.clock && typeof json.clock.elapsedTime === 'number') ? json.clock.elapsedTime : (typeof json.displayElapsedSeconds === 'number' ? json.displayElapsedSeconds : undefined);
+                        const serverOffset = (json.clock && typeof json.clock.offsetMinutes === 'number') ? json.clock.offsetMinutes : (typeof json.offsetMinutes === 'number' ? json.offsetMinutes : adminOffsetMinutes);
+                        if (typeof serverElapsed === 'number') {
+                            seconds = Number(serverElapsed) || 0;
+                            adminOffsetMinutes = Number(serverOffset) || 0;
+                            updateClock();
+                        }
                     }
-                }),
-            }).then(response => response.json());
+                } catch (e) { console.error('Error applying server clock to admin UI', e); }
+                return json;
+            });
+        }
+
+        // Set manual start time when the game has already been running for some minutes
+        function setManualStartFromInput() {
+            const input = document.getElementById('manualStartTime');
+            if (!input) return Promise.reject(new Error('Manual start input missing'));
+
+            const val = (input.value || '').trim();
+            if (!/^[0-9]{1,2}:[0-9]{2}$/.test(val)) {
+                return Promise.reject(new Error('Ungültiges Zeitformat. Verwende MM:SS'));
+            }
+
+            const [mm, ss] = val.split(':').map(n => parseInt(n, 10));
+            const elapsedSecs = (mm * 60) + ss;
+            const startTime = Date.now() - (elapsedSecs * 1000);
+
+            const payload = {
+                // keep scoreboard metadata in sync
+                homeTeam: document.getElementById('homeTeam').value,
+                awayTeam: document.getElementById('awayTeam').value,
+                homeScore: Number(document.getElementById('homeScore').value) || 0,
+                awayScore: Number(document.getElementById('awayScore').value) || 0,
+                clock: {
+                    startTime: startTime,
+                    elapsedTime: elapsedSecs,
+                    running: true,
+                    offsetMinutes: adminOffsetMinutes
+                }
+            };
+
+            return fetch('/api/update-display', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(r => r.json());
         }
 
         function startLocalClock(offsetMinutes = 0) {
@@ -384,7 +541,6 @@
         document.getElementById('startClock').addEventListener('click', () => {
             // Use the adminOffsetMinutes variable (presets or manual calls set this)
             const offsetMinutes = adminOffsetMinutes || 0;
-            const elapsedSeconds = seconds || 0;
 
             syncDisplaySettings()
             .then(syncData => {
@@ -392,18 +548,34 @@
                     throw new Error(syncData.message || 'Anzeige konnte nicht synchronisiert werden');
                 }
 
+                // Determine elapsedSeconds to send: prefer manual input if present
+                let elapsedSeconds = Number(seconds) || 0;
+                try {
+                    const manualVal = (document.getElementById('manualStartTime') && document.getElementById('manualStartTime').value || '').trim();
+                    if (/^[0-9]{1,2}:[0-9]{2}$/.test(manualVal)) {
+                        const [mm, ss] = manualVal.split(':').map(n => parseInt(n, 10));
+                        elapsedSeconds = (mm * 60) + ss;
+                    }
+                } catch (e) { /* ignore */ }
+
+                // Ensure admin UI reflects the elapsedSeconds we're about to start
+                seconds = Number(elapsedSeconds) || 0;
+                updateClock();
+                // Clear manual input after applying
+                try { document.getElementById('manualStartTime').value = ''; } catch (e) {}
+
                 // Start the local clock with the configured admin offset
                 startLocalClock(offsetMinutes);
 
                 return fetch('/api/start-clock', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    elapsedSeconds,
-                    offsetMinutes
-                })
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        elapsedSeconds,
+                        offsetMinutes
+                    })
                 });
             })
             .then(response => response.json())
@@ -433,6 +605,9 @@
             seconds = 0;
             adminOffsetMinutes = 0;
             updateClock();
+
+            // Clear manual input when stopping
+            try { document.getElementById('manualStartTime').value = ''; } catch (e) {}
 
             fetch('/api/reset-clock', {
                 method: 'POST',
@@ -524,6 +699,8 @@
                 alert('Fehler beim Aktualisieren der Anzeige: ' + error.message);
             });
         });
+
+        // Manual input is now handled by syncDisplaySettings() when "Anzeigetafel Synchronisieren" is clicked.
 
         // Update display data after score change
         function updateDisplay() {
@@ -671,6 +848,125 @@
 
         // Call fetchGames on page load
         window.addEventListener('load', fetchGames);
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+                tab.classList.add('active');
+                const panel = document.getElementById('panel-' + tab.dataset.tab);
+                if (panel) panel.classList.add('active');
+            });
+        });
+
+        // Sponsors CRUD helpers
+        async function loadSponsors() {
+            try {
+                const res = await fetch('/api/sponsors-db');
+                const data = await res.json();
+                const list = document.getElementById('sponsorsList');
+                if (!data.success) return list.textContent = 'Fehler beim Laden der Sponsoren.';
+                if (!Array.isArray(data.sponsors) || data.sponsors.length === 0) {
+                    list.innerHTML = '<div>Keine Sponsoren gefunden.</div>';
+                    return;
+                }
+
+                list.innerHTML = '';
+                const header = document.createElement('div');
+                header.className = 'list-row';
+                header.style.fontWeight = '700';
+                header.innerHTML = '<div style="flex:1">Sponsor</div><div>Ordner</div><div>Priorität</div><div>Status</div><div>Aktion</div>';
+                list.appendChild(header);
+
+                data.sponsors.forEach(s => {
+                    const el = document.createElement('div');
+                    el.className = 'list-row';
+                    el.innerHTML = `
+                        <div style="flex:1">
+                            <strong>${s.name}</strong><br>
+                            ${s.image ? `<a href="${s.image}" target="_blank">Bild ansehen</a>` : '<em>Kein Bild</em>'}
+                        </div>
+                        <div>${s.group_name || '—'}</div>
+                        <div>${s.priority || '—'}</div>
+                        <div>${s.active ? 'aktiv' : 'inaktiv'}</div>
+                        <div><button type="button" onclick="deleteSponsor(${s.id})">Löschen</button></div>
+                    `;
+                    list.appendChild(el);
+                });
+            } catch (e) {
+                console.error(e);
+                document.getElementById('sponsorsList').textContent = 'Fehler beim Laden der Sponsoren.';
+            }
+        }
+
+        async function deleteSponsor(id) {
+            if (!confirm('Sponsor wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.')) {
+                return;
+            }
+            try {
+                const res = await fetch(`/api/sponsors-db/${id}`, { method: 'DELETE' });
+                const json = await res.json();
+                if (!json.success) throw new Error('Löschen fehlgeschlagen');
+                loadSponsors();
+            } catch (e) {
+                console.error(e);
+                alert('Fehler beim Löschen des Sponsors.');
+            }
+        }
+
+        document.getElementById('createSponsor').addEventListener('click', async () => {
+            const form = document.getElementById('sponsorForm');
+            const fd = new FormData();
+            fd.append('name', document.getElementById('sponsorName').value);
+            fd.append('group_name', document.getElementById('sponsorGroup').value);
+            fd.append('priority', document.getElementById('sponsorPriority').value);
+            fd.append('active', document.getElementById('sponsorActive').checked ? '1' : '0');
+            const file = document.getElementById('sponsorImage').files[0];
+            if (file) fd.append('image', file);
+            try {
+                const res = await fetch('/api/sponsors-db', { method: 'POST', body: fd });
+                const json = await res.json();
+                if (!json.success) throw new Error(json.message || 'Fehler');
+                alert('Sponsor erstellt');
+                form.reset();
+                loadSponsors();
+            } catch (e) {
+                console.error(e);
+                alert('Fehler beim Erstellen des Sponsors.');
+            }
+        });
+
+        // Game settings wiring
+        document.getElementById('saveGameSettings').addEventListener('click', async () => {
+            const selected = document.getElementById('gamesDropdown').value;
+            if (!selected || selected === 'manual') return alert('Bitte ein Spiel wählen');
+            const game = JSON.parse(selected);
+            const gameId = encodeURIComponent(game.homeTeam + '|' + game.awayTeam + '|' + (game.dateTime||''));
+            const auto_sync = Number(document.getElementById('autoSyncSelect').value);
+            const sync_before_minutes = Number(document.getElementById('syncBeforeMinutes').value);
+            try {
+                const res = await fetch(`/api/gamesettings/${gameId}`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ auto_sync, sync_before_minutes }) });
+                const json = await res.json();
+                if (!json.success) throw new Error('Fehler');
+                alert('Einstellungen gespeichert');
+            } catch (e) { console.error(e); alert('Fehler beim Speichern'); }
+        });
+
+        document.getElementById('syncLineupNow').addEventListener('click', async () => {
+            const selected = document.getElementById('gamesDropdown').value;
+            if (!selected || selected === 'manual') return alert('Bitte ein Spiel wählen');
+            const game = JSON.parse(selected);
+            // For now just call the scrape endpoint for test
+            try {
+                const res = await fetch('/api/scrape');
+                const json = await res.json();
+                alert('Sync result: ' + (json.success ? 'OK' : 'Fehler'));
+            } catch (e) { console.error(e); alert('Fehler beim Sync'); }
+        });
+
+        // Load sponsors on startup of that tab
+        document.querySelector('[data-tab="sponsors"]').addEventListener('click', loadSponsors);
 
         // Initialize clock
         setActivePreset('firstHalf');

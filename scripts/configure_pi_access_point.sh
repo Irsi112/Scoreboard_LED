@@ -2,13 +2,13 @@
 
 set -euo pipefail
 
-AP_NAME="kylltalAnzeigetafel"
-AP_PASSWORD='Gemein$chaftMacht$tark2013'
+AP_NAME="KylltalScoreboard"
+AP_PASSWORD='Klassenerhalt2026'
 AP_ADDRESS="10.42.0.1/24"
-AP_ADMIN_URL="http://10.42.0.1:3000/admin.html"
-HOSTNAME_VALUE="kylltal-scoreboard"
+AP_ADMIN_URL="http://10.42.0.1/ticker"
+HOSTNAME_VALUE="kylltalscoreboard"
 WIFI_DEVICE="wlan0"
-ACTIVATE_NOW=0
+ACTIVATE_NOW=1
 
 if [[ "${1:-}" == "--activate-now" ]]; then
   ACTIVATE_NOW=1
@@ -94,7 +94,7 @@ main() {
   echo "SSID: $AP_NAME"
   echo "Password: $AP_PASSWORD"
   echo "Admin URL after AP activation: $AP_ADMIN_URL"
-  echo "Optional mDNS URL: http://${HOSTNAME_VALUE}.local:3000/admin.html"
+  echo "Optional mDNS URL: http://${HOSTNAME_VALUE}.local/ticker"
 
   if [[ "$ACTIVATE_NOW" -eq 1 ]]; then
     echo

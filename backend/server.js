@@ -4,6 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const multer = require('multer');
+const Database = require('better-sqlite3');
+const cron = require('node-cron');
 
 // Initialize the app
 const app = express();
@@ -24,8 +27,91 @@ const gamesCacheStatus = {
     lastError: null
 };
 
+const SPONSOR_GROUP_FOLDERS = [
+    '01_Hauptsponsoren_ 1000 Euro +',
+    '02_Co-Sponsoren_ 500 Euro +',
+    '03_Premiumpartner_ 250 Euro +',
+    '04_Partner SG 150 Euro'
+];
+
+function normalizeSponsorGroupFolder(groupName) {
+    if (!groupName) return 'misc';
+    const normalized = String(groupName).trim();
+    if (SPONSOR_GROUP_FOLDERS.includes(normalized)) {
+        return normalized;
+    }
+    return normalized
+        .replace(/[\\/]+/g, '_')
+        .replace(/[^a-zA-Z0-9 _\-\+]/g, '_')
+        .trim() || 'misc';
+}
+
 // Middleware to parse JSON bodies
 app.use(express.json());
+
+// Setup file upload temp directory
+const uploadsTemp = path.join(__dirname, '../frontend/uploads');
+if (!fs.existsSync(uploadsTemp)) fs.mkdirSync(uploadsTemp, { recursive: true });
+const upload = multer({ dest: uploadsTemp });
+
+// Initialize SQLite DB
+const dbPath = path.join(__dirname, 'data/scoreboard.db');
+ensureParentDir(dbPath);
+const db = new Database(dbPath);
+// Create tables
+db.prepare(`CREATE TABLE IF NOT EXISTS players (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    team TEXT,
+    position TEXT,
+    image TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`).run();
+
+db.prepare(`CREATE TABLE IF NOT EXISTS sponsors (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    group_name TEXT,
+    image TEXT,
+    active INTEGER DEFAULT 1,
+    priority INTEGER DEFAULT 99,
+    weight INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`).run();
+
+db.prepare(`CREATE TABLE IF NOT EXISTS game_settings (
+    id INTEGER PRIMARY KEY,
+    game_id TEXT,
+    auto_sync INTEGER DEFAULT 0,
+    sync_before_minutes INTEGER DEFAULT 30,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`).run();
+
+db.prepare(`CREATE TABLE IF NOT EXISTS lineups (
+    id INTEGER PRIMARY KEY,
+    game_id TEXT,
+    player_id INTEGER,
+    role TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`).run();
+
+// Helper to move uploaded file into target folder and return public path
+function moveUploadToFrontend(file, targetDir, targetFilename) {
+    const destDir = path.join(__dirname, '..', 'frontend', targetDir);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+    const destName = targetFilename || file.originalname;
+    const destPath = path.join(destDir, destName);
+    try {
+        fs.renameSync(file.path, destPath);
+        return path.join('/' + targetDir, destName).replace(/\\\\/g, '/');
+    } catch (e) {
+        // fallback: copy
+        fs.copyFileSync(file.path, destPath);
+        fs.unlinkSync(file.path);
+        return path.join('/' + targetDir, destName).replace(/\\\\/g, '/');
+    }
+}
 
 // Serve static files from the frontend directory
 app.use(express.static(path.join(__dirname, '../frontend')));
@@ -891,6 +977,199 @@ app.get('/api/sponsors', (req, res) => {
         res.status(500).json({ success: false, message: 'Failed to list sponsors' });
     }
 });
+
+// --------- New DB-backed API endpoints ---------
+
+// Sponsors CRUD (file upload for image)
+app.get('/api/sponsors-db', (req, res) => {
+    try {
+        const rows = db.prepare('SELECT * FROM sponsors ORDER BY priority ASC, created_at DESC').all();
+        res.json({ success: true, sponsors: rows });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.post('/api/sponsors-db', upload.single('image'), (req, res) => {
+    try {
+        const { name, group_name, active, priority } = req.body;
+        let imagePath = null;
+        let storedGroup = group_name || '';
+        if (req.file) {
+            const groupFolder = normalizeSponsorGroupFolder(group_name);
+            imagePath = moveUploadToFrontend(req.file, `sponsors/${groupFolder}`);
+            storedGroup = groupFolder;
+        }
+        const info = db.prepare('INSERT INTO sponsors (name, group_name, image, active, priority) VALUES (?, ?, ?, ?, ?)')
+            .run(name || 'Unnamed', storedGroup, imagePath || '', active ? 1 : 0, priority ? Number(priority) : 99);
+        const sponsor = db.prepare('SELECT * FROM sponsors WHERE id = ?').get(info.lastInsertRowid);
+        res.json({ success: true, sponsor });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.put('/api/sponsors-db/:id', upload.single('image'), (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const { name, group_name, active, priority } = req.body;
+        const sponsor = db.prepare('SELECT * FROM sponsors WHERE id = ?').get(id);
+        if (!sponsor) return res.status(404).json({ success: false, message: 'Not found' });
+        let imagePath = sponsor.image;
+        let storedGroup = sponsor.group_name || '';
+        if (req.file) {
+            const groupFolder = normalizeSponsorGroupFolder(group_name || sponsor.group_name);
+            imagePath = moveUploadToFrontend(req.file, `sponsors/${groupFolder}`);
+            storedGroup = groupFolder;
+        }
+        db.prepare('UPDATE sponsors SET name = ?, group_name = ?, image = ?, active = ?, priority = ? WHERE id = ?')
+            .run(name || sponsor.name, storedGroup, imagePath || sponsor.image, active ? 1 : 0, priority ? Number(priority) : sponsor.priority, id);
+        res.json({ success: true, sponsor: db.prepare('SELECT * FROM sponsors WHERE id = ?').get(id) });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.delete('/api/sponsors-db/:id', (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        db.prepare('DELETE FROM sponsors WHERE id = ?').run(id);
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+// Players CRUD (with image upload)
+app.get('/api/players', (req, res) => {
+    try {
+        const rows = db.prepare('SELECT * FROM players ORDER BY name COLLATE NOCASE').all();
+        res.json({ success: true, players: rows });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.post('/api/players', upload.single('image'), (req, res) => {
+    try {
+        const { name, team, position, is_active } = req.body;
+        let imagePath = '';
+        if (req.file) {
+            const teamFolder = (team || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_');
+            imagePath = moveUploadToFrontend(req.file, `players/${teamFolder}`);
+        }
+        const info = db.prepare('INSERT INTO players (name, team, position, image, is_active) VALUES (?, ?, ?, ?, ?)')
+            .run(name || 'Unnamed', team || '', position || '', imagePath || '', is_active ? 1 : 1);
+        const player = db.prepare('SELECT * FROM players WHERE id = ?').get(info.lastInsertRowid);
+        res.json({ success: true, player });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.put('/api/players/:id', upload.single('image'), (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        const existing = db.prepare('SELECT * FROM players WHERE id = ?').get(id);
+        if (!existing) return res.status(404).json({ success: false });
+        const { name, team, position, is_active } = req.body;
+        let imagePath = existing.image;
+        if (req.file) {
+            const teamFolder = (team || existing.team || 'unknown').replace(/[^a-zA-Z0-9_\-]/g, '_');
+            imagePath = moveUploadToFrontend(req.file, `players/${teamFolder}`);
+        }
+        db.prepare('UPDATE players SET name = ?, team = ?, position = ?, image = ?, is_active = ? WHERE id = ?')
+            .run(name || existing.name, team || existing.team, position || existing.position, imagePath || existing.image, typeof is_active !== 'undefined' ? (is_active ? 1 : 0) : existing.is_active, id);
+        res.json({ success: true, player: db.prepare('SELECT * FROM players WHERE id = ?').get(id) });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.delete('/api/players/:id', (req, res) => {
+    try {
+        const id = Number(req.params.id);
+        db.prepare('DELETE FROM players WHERE id = ?').run(id);
+        db.prepare('DELETE FROM lineups WHERE player_id = ?').run(id);
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+// Game settings endpoints
+app.get('/api/gamesettings/:gameId', (req, res) => {
+    try {
+        const gameId = req.params.gameId;
+        const row = db.prepare('SELECT * FROM game_settings WHERE game_id = ?').get(gameId);
+        res.json({ success: true, settings: row || null });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.post('/api/gamesettings/:gameId', (req, res) => {
+    try {
+        const gameId = req.params.gameId;
+        const { auto_sync, sync_before_minutes } = req.body;
+        const existing = db.prepare('SELECT * FROM game_settings WHERE game_id = ?').get(gameId);
+        if (existing) {
+            db.prepare('UPDATE game_settings SET auto_sync = ?, sync_before_minutes = ? WHERE game_id = ?')
+                .run(auto_sync ? 1 : 0, Number(sync_before_minutes || 30), gameId);
+        } else {
+            db.prepare('INSERT INTO game_settings (game_id, auto_sync, sync_before_minutes) VALUES (?, ?, ?)')
+                .run(gameId, auto_sync ? 1 : 0, Number(sync_before_minutes || 30));
+        }
+        res.json({ success: true, settings: db.prepare('SELECT * FROM game_settings WHERE game_id = ?').get(gameId) });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+// Lineup management for a game
+app.post('/api/games/:gameId/lineup', (req, res) => {
+    try {
+        const gameId = req.params.gameId;
+        const { starters = [], bench = [], others = [] } = req.body;
+        // Remove existing for game
+        db.prepare('DELETE FROM lineups WHERE game_id = ?').run(gameId);
+        const insert = db.prepare('INSERT INTO lineups (game_id, player_id, role) VALUES (?, ?, ?)');
+        starters.forEach(pid => insert.run(gameId, Number(pid), 'starter'));
+        bench.forEach(pid => insert.run(gameId, Number(pid), 'bench'));
+        others.forEach(pid => insert.run(gameId, Number(pid), 'not_selected'));
+        res.json({ success: true });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+app.get('/api/games/:gameId/lineup', (req, res) => {
+    try {
+        const gameId = req.params.gameId;
+        const rows = db.prepare('SELECT l.*, p.name as player_name, p.image as player_image FROM lineups l LEFT JOIN players p ON p.id = l.player_id WHERE l.game_id = ?').all(gameId);
+        res.json({ success: true, lineup: rows });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false });
+    }
+});
+
+// Basic cron scheduler example (placeholder) to run sync jobs; can be extended
+cron.schedule('*/5 * * * *', () => {
+    // placeholder: in future check DB for upcoming games with auto_sync and trigger sync
+});
+
 
 // Endpoint to start the clock
 app.post('/api/start-clock', (req, res) => {
