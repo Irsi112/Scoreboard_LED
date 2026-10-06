@@ -348,6 +348,54 @@
             }).then(response => response.json());
         }
 
+        function loadCurrentDisplayState() {
+            return fetch('/api/display-data')
+                .then(response => response.json())
+                .then(data => {
+                    if (!data || !data.success) {
+                        return null;
+                    }
+
+                    const team1 = data.team1 || {};
+                    const team2 = data.team2 || {};
+                    const homeTeamField = document.getElementById('homeTeam');
+                    const awayTeamField = document.getElementById('awayTeam');
+                    const homeScoreField = document.getElementById('homeScore');
+                    const awayScoreField = document.getElementById('awayScore');
+
+                    if (homeTeamField) homeTeamField.value = team1.name || '';
+                    if (awayTeamField) awayTeamField.value = team2.name || '';
+                    if (homeScoreField) homeScoreField.value = Number(team1.score || 0);
+                    if (awayScoreField) awayScoreField.value = Number(team2.score || 0);
+
+                    homeTeamField && homeTeamField.setAttribute('readonly', true);
+                    awayTeamField && awayTeamField.setAttribute('readonly', true);
+
+                    const serverElapsed = typeof data.displayElapsedSeconds === 'number'
+                        ? Number(data.displayElapsedSeconds)
+                        : (typeof data.elapsedSeconds === 'number' ? Number(data.elapsedSeconds) : 0);
+                    const resolvedOffset = typeof data.offsetMinutes === 'number'
+                        ? Number(data.offsetMinutes)
+                        : 0;
+
+                    seconds = serverElapsed;
+                    adminOffsetMinutes = resolvedOffset;
+                    updateClock();
+
+                    const running = Boolean(data.isGameActive || (data.clock && data.clock.running));
+                    const startBtn = document.getElementById('startClock');
+                    const stopBtn = document.getElementById('stopClock');
+                    if (startBtn) startBtn.disabled = running;
+                    if (stopBtn) stopBtn.disabled = !running;
+
+                    return data;
+                })
+                .catch(error => {
+                    console.error('Error loading current display state:', error);
+                    return null;
+                });
+        }
+
         // Score controls
         function updateDisplayData() {
             return syncCurrentDisplayState()
@@ -846,8 +894,11 @@
 
         document.getElementById('syncGamesCache').addEventListener('click', syncGamesFromFussballDe);
 
-        // Call fetchGames on page load
-        window.addEventListener('load', fetchGames);
+        // Call fetchGames and preload the current display state on page load
+        window.addEventListener('load', async () => {
+            await fetchGames();
+            await loadCurrentDisplayState();
+        });
 
         // Tab switching
         document.querySelectorAll('.tab').forEach(tab => {

@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Willkommen</title>
+    <style>
+        :root {
+            --bg-dark: #000000;
+            --bg-soft: #101820;
+            --panel-bg: rgba(18, 24, 32, 0.7);
+            --text-light: #f5f7fa;
+            --text-muted: rgba(245, 247, 250, 0.85);
+            --sponsor-band-height: 50vh;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            min-height: 100%;
+            min-height: 100vh;
+            font-family: Arial, sans-serif;
+            background: #000 url('./background.png') center center / cover no-repeat;
+            color: var(--text-light);
+        }
+
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .page {
+            width: 100%;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px 24px calc(var(--sponsor-band-height) + 24px);
+            position: relative;
+        }
+
+        .welcome-header {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: clamp(18px, 2vw, 34px);
+            text-align: left;
+            z-index: 1;
+        }
+
+        .club-logo {
+            display: block;
+            width: clamp(140px, 18vmin, 220px);
+            height: auto;
+            max-height: 220px;
+            border-radius: 18px;
+            background: rgba(255,255,255,0.06);
+            box-shadow: 0 18px 50px rgba(0,0,0,0.35);
+            object-fit: contain;
+        }
+
+        .welcome-text {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+        }
+
+        .welcome-line {
+            margin: 0;
+            font-size: clamp(2.2rem, 6vw, 6rem);
+            line-height: 0.92;
+            letter-spacing: 0.04em;
+            font-weight: 900;
+            text-shadow: 0 12px 26px rgba(0,0,0,0.45);
+        }
+
+        .sponsor-strip {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: var(--sponsor-band-height);
+            min-height: var(--sponsor-band-height);
+            max-height: var(--sponsor-band-height);
+            overflow: hidden;
+            background: rgba(12, 18, 24, 0.86);
+            border-top: 2px solid rgba(255,255,255,0.16);
+            box-shadow: 0 -12px 32px rgba(0,0,0,0.4);
+            z-index: 2;
+        }
+
+        #sponsorTicker {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-evenly;
+            gap: clamp(8px, 1vw, 18px);
+            padding: 0;
+            transition: opacity 320ms ease, transform 320ms ease;
+        }
+
+        #sponsorTicker img {
+            display: block;
+            flex: 0 0 auto;
+            width: auto;
+            height: 100%;
+            max-height: 100%;
+            object-fit: contain;
+            filter: drop-shadow(0 10px 18px rgba(0,0,0,0.28));
+            opacity: 0.98;
+            user-select: none;
+            -webkit-user-drag: none;
+            pointer-events: none;
+            animation: sponsorReveal 360ms ease-out;
+        }
+
+        @keyframes sponsorReveal {
+            0% {
+                opacity: 0;
+                transform: translateY(10px) scale(0.96);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page">
+        <header class="welcome-header">
+            <img class="club-logo" src="team1_logo.png" alt="Vereinslogo">
+            <div class="welcome-text">
+                <div class="welcome-line">Herzlich</div>
+                <div class="welcome-line">Willkommen!</div>
+            </div>
+        </header>
+    </div>
+
+    <div class="sponsor-strip">
+        <div id="sponsorTicker" aria-label="Sponsor Logos"></div>
+    </div>
+
+    <script>
+        const ticker = document.getElementById('sponsorTicker');
+
+        function shuffleArray(items) {
+            const shuffled = [...items];
+            for (let i = shuffled.length - 1; i > 0; i -= 1) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            }
+            return shuffled;
+        }
+
+        function pickNextSponsorEntry(entries, previousSponsor) {
+            const availableEntries = entries.filter(entry => entry.remaining > 0);
+            if (availableEntries.length === 0) {
+                return null;
+            }
+
+            const differentLogoAndPriority = availableEntries.filter(entry => {
+                if (!previousSponsor) {
+                    return true;
+                }
+                return entry.url !== previousSponsor.url && entry.priority !== previousSponsor.priority;
+            });
+
+            const differentLogo = availableEntries.filter(entry => {
+                if (!previousSponsor) {
+                    return true;
+                }
+                return entry.url !== previousSponsor.url;
+            });
+
+            const pool = differentLogoAndPriority.length > 0
+                ? differentLogoAndPriority
+                : (differentLogo.length > 0 ? differentLogo : availableEntries);
+
+            const totalRemaining = pool.reduce((sum, entry) => sum + entry.remaining, 0);
+            let threshold = Math.random() * totalRemaining;
+
+            for (const entry of pool) {
+                threshold -= entry.remaining;
+                if (threshold <= 0) {
+                    return entry;
+                }
+            }
+
+            return pool[pool.length - 1];
+        }
+
+        function buildWeightedSponsorCycle(sponsors) {
+            const entries = shuffleArray(sponsors.map(sponsor => ({
+                ...sponsor,
+                priority: Number(sponsor.priority) || 4,
+                remaining: Math.max(1, Number(sponsor.weight) || 1)
+            })));
+
+            const cycle = [];
+            let previousSponsor = null;
+
+            while (entries.some(entry => entry.remaining > 0)) {
+                const nextEntry = pickNextSponsorEntry(entries, previousSponsor);
+                if (!nextEntry) {
+                    break;
+                }
+
+                cycle.push(nextEntry);
+                nextEntry.remaining -= 1;
+                previousSponsor = nextEntry;
+            }
+
+            if (cycle.length > 1 && cycle[0].url === cycle[cycle.length - 1].url) {
+                const swapIndex = cycle.findIndex((sponsor, index) => index > 0 && sponsor.url !== cycle[0].url);
+                if (swapIndex > 0) {
+                    const firstSponsor = cycle[0];
+                    cycle[0] = cycle[swapIndex];
+                    cycle[swapIndex] = firstSponsor;
+                }
+            }
+
+            return cycle;
+        }
+
+        function waitForTickerImages(images) {
+            return Promise.all(images.map(img => new Promise(resolve => {
+                if (img.complete) {
+                    resolve();
+                    return;
+                }
+
+                img.addEventListener('load', resolve, { once: true });
+                img.addEventListener('error', resolve, { once: true });
+            })));
+        }
+
+        function applyLogoSizing(img, availableWidth, availableHeight) {
+            const naturalWidth = img.naturalWidth || img.width || 0;
+            const naturalHeight = img.naturalHeight || img.height || 0;
+
+            if (!naturalWidth || !naturalHeight) {
+                return;
+            }
+
+            if (naturalWidth > availableWidth) {
+                const scale = availableWidth / naturalWidth;
+                img.style.width = `${Math.round(naturalWidth * scale)}px`;
+                img.style.height = `${Math.round(naturalHeight * scale)}px`;
+                img.style.maxWidth = `${availableWidth}px`;
+                img.style.maxHeight = `${availableHeight}px`;
+                return;
+            }
+
+            img.style.width = '';
+            img.style.height = '100%';
+            img.style.maxWidth = '';
+            img.style.maxHeight = '100%';
+        }
+
+        function getVisibleBatchSize() {
+            const width = ticker.clientWidth || window.innerWidth;
+            if (width < 1000) return 2;
+            if (width < 1400) return 3;
+            if (width < 1800) return 4;
+            return 5;
+        }
+
+        async function initWelcomeSponsorTicker() {
+            try {
+                const resp = await fetch('/api/sponsors');
+                const data = await resp.json();
+                if (!data.success) {
+                    return;
+                }
+
+                const sponsors = Array.isArray(data.sponsors) ? data.sponsors : [];
+                if (sponsors.length === 0) {
+                    return;
+                }
+
+                const cycle = buildWeightedSponsorCycle(sponsors);
+                if (cycle.length === 0) {
+                    return;
+                }
+
+                const extendedCycle = [...cycle, ...cycle];
+                let currentBatchIndex = 0;
+
+                async function renderBatch(batchIndex) {
+                    const visibleBatchSize = getVisibleBatchSize();
+                    const gap = parseFloat(getComputedStyle(ticker).gap) || 0;
+                    const availableWidth = Math.max(1, ticker.clientWidth - 20);
+                    const availableHeight = Math.max(1, ticker.clientHeight - 10);
+                    const batch = [];
+                    let currentWidth = 0;
+
+                    ticker.innerHTML = '';
+
+                    for (let offset = 0; offset < visibleBatchSize; offset += 1) {
+                        const sponsor = extendedCycle[(batchIndex + offset) % extendedCycle.length];
+                        if (!sponsor) {
+                            break;
+                        }
+
+                        const img = document.createElement('img');
+                        img.src = sponsor.url;
+                        img.alt = 'Sponsor Logo';
+                        img.loading = 'eager';
+                        ticker.appendChild(img);
+
+                        await waitForTickerImages([img]);
+
+                        const naturalWidth = img.naturalWidth || img.getBoundingClientRect().width || 0;
+                        const widthToReserve = Math.min(naturalWidth, availableWidth);
+                        const nextWidth = currentWidth + widthToReserve + (batch.length > 0 ? gap : 0);
+
+                        if (nextWidth > availableWidth) {
+                            img.remove();
+                            break;
+                        }
+
+                        batch.push(sponsor);
+                        currentWidth = nextWidth;
+                    }
+
+                    if (batch.length === 0) {
+                        const fallbackSponsor = extendedCycle[batchIndex % extendedCycle.length];
+                        if (fallbackSponsor) {
+                            const fallbackImg = document.createElement('img');
+                            fallbackImg.src = fallbackSponsor.url;
+                            fallbackImg.alt = 'Sponsor Logo';
+                            fallbackImg.loading = 'eager';
+                            ticker.appendChild(fallbackImg);
+                            await waitForTickerImages([fallbackImg]);
+                            applyLogoSizing(fallbackImg, availableWidth, availableHeight);
+                        }
+                    } else {
+                        const images = Array.from(ticker.querySelectorAll('img'));
+                        images.forEach(img => applyLogoSizing(img, availableWidth, availableHeight));
+                    }
+
+                    ticker.style.opacity = '1';
+                }
+
+                await renderBatch(0);
+
+                setInterval(() => {
+                    const visibleBatchSize = getVisibleBatchSize();
+                    currentBatchIndex = (currentBatchIndex + visibleBatchSize) % extendedCycle.length;
+                    ticker.style.opacity = '0.2';
+                    setTimeout(() => {
+                        renderBatch(currentBatchIndex);
+                    }, 130);
+                }, 4800);
+            } catch (error) {
+                console.error('Failed to initialize welcome sponsor ticker', error);
+            }
+        }
+
+        initWelcomeSponsorTicker();
+    </script>
+</body>
+</html>

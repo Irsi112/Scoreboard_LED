@@ -214,5 +214,65 @@
     "competition": "C-Junioren | Kreisklasse",
     "homeTeam": "JSG Vulkanland /​ Eifel Mitte - Berndorf",
     "awayTeam": "JSG Kylltal Birresborn II (9er)"
+  },
+  {
+    "dateTime": "Mi, 09.09.26 18:00",
+    "competition": "D-Junioren | Kreisklasse",
+    "homeTeam": "JSG Kylltal Birresborn II",
+    "awayTeam": "JSG Waldeifel Spangdahlem /​Kyllburg II (7er)"
+  },
+  {
+    "dateTime": "Do, 10.09.26 18:45",
+    "competition": "B-Junioren | Bezirksliga",
+    "homeTeam": "JSG Mont Royal Traben-Trarbach/​Bremm",
+    "awayTeam": "JSG Kylltal Birresborn"
+  },
+  {
+    "dateTime": "Sa, 12.09.26 10:00",
+    "competition": "G-Junioren | Kinderfußball",
+    "homeTeam": "JSG Schneifel Stadtkyll - Kinderfestival",
+    "awayTeam": "JSG Kylltal Birresborn"
+  },
+  {
+    "dateTime": "19:30",
+    "competition": "A-Junioren | Kreisoberliga",
+    "homeTeam": "JSG Dauner Land Daun (U20)",
+    "awayTeam": "JSG Kylltal Birresborn"
+  },
+  {
+    "dateTime": "12:30",
+    "competition": "E-Junioren | Kreisklasse",
+    "homeTeam": "JSG Ringhuscheid",
+    "awayTeam": "JSG Kylltal Birresborn II"
+  },
+  {
+    "dateTime": "13:00",
+    "competition": "D-Junioren | Kreisoberliga",
+    "homeTeam": "JSG Islek Daleiden",
+    "awayTeam": "JSG Kylltal Birresborn"
+  },
+  {
+    "dateTime": "13:00",
+    "competition": "D-Junioren | Kreisklasse",
+    "homeTeam": "JSG Eifelhöhe Kelberg II",
+    "awayTeam": "JSG Kylltal Birresborn II"
+  },
+  {
+    "dateTime": "13:30",
+    "competition": "C-Junioren | Kreisklasse",
+    "homeTeam": "JSG Prümer Land Prüm II (9er)",
+    "awayTeam": "JSG Kylltal Birresborn II"
+  },
+  {
+    "dateTime": "15:00",
+    "competition": "E-Junioren | Kreisoberliga",
+    "homeTeam": "JSG WLP-Watzerath",
+    "awayTeam": "JSG Kylltal Birresborn"
+  },
+  {
+    "dateTime": "15:15",
+    "competition": "C-Junioren | Bezirksliga",
+    "homeTeam": "JFV Wittlich",
+    "awayTeam": "JSG Kylltal Birresborn"
   }
 ]
